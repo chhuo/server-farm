@@ -39,14 +39,37 @@ _ENV_SEPARATOR = "__"
 
 _BUILTIN_DEFAULTS: dict[str, Any] = {
     "app": {
-        "name": "MyServer",
+        "name": "NodePanel",
         "version": "0.1.0",
         "env": "development",
         "debug": True,
     },
     "server": {
         "host": "0.0.0.0",
-        "port": 8000,
+        "port": 8300,
+    },
+    "node": {
+        "id": "",
+        "name": "",
+        "mode": "auto",
+        "primary_server": "",
+    },
+    "peer": {
+        "sync_interval": 30,
+        "heartbeat_interval": 10,
+        "timeout": 10,
+        "max_fanout": 3,
+        "max_heartbeat_failures": 3,
+    },
+    "security": {
+        "node_key": "",
+        "admin_user": "admin",
+        "admin_password": "",
+        "command_blacklist": [
+            "rm -rf /",
+            "mkfs",
+            "dd if=/dev/zero",
+        ],
     },
     "logging": {
         "level": "DEBUG",
@@ -185,7 +208,7 @@ class ConfigManager:
         # 确定最终配置文件路径
         final_path = config_path or cli_config_path
         if final_path is None:
-            final_path = os.path.join(self._project_root, "config", "default.yaml")
+            final_path = os.path.join(self._project_root, "config.yaml")
 
         self._config_file_path = os.path.abspath(final_path)
 

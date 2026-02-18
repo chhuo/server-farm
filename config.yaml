@@ -1,0 +1,55 @@
+# ============================================================
+# NodePanel 配置文件
+# ============================================================
+# 加载优先级（从低到高）：
+#   1. 内置默认值（代码中硬编码）
+#   2. 本文件 (config.yaml)
+#   3. 环境变量（APP_ 前缀，双下划线 __ 表示层级）
+#   4. 命令行参数（--config 指定的自定义文件）
+# ============================================================
+
+app:
+  name: "NodePanel"
+  version: "0.1.0"
+  env: "development"         # development / staging / production
+  debug: true
+
+server:
+  host: "0.0.0.0"
+  port: 8300
+
+node:
+  id: ""                       # 留空自动生成
+  name: ""                     # 显示名称，留空用 hostname
+  mode: "auto"                 # auto / full / relay
+  primary_server: ""           # 填写 URL → Relay 模式；空 → Full 模式
+
+peer:
+  sync_interval: 30            # Full 节点间基础同步间隔（秒）
+  heartbeat_interval: 10       # Relay 心跳间隔（秒）
+  timeout: 10                  # 请求超时（秒）
+  max_fanout: 3                # 每轮最多同步几个 Peer
+  max_heartbeat_failures: 3    # 连续失败几次触发故障转移
+
+security:
+  node_key: ""                 # 首次启动自动生成
+  admin_user: "admin"
+  admin_password: ""           # 首次启动引导设置
+  command_blacklist:
+    - "rm -rf /"
+    - "mkfs"
+    - "dd if=/dev/zero"
+
+logging:
+  level: "DEBUG"
+  console:
+    enabled: true
+    colorize: true
+  file:
+    enabled: true
+    directory: "logs"
+    max_size_mb: 10
+    backup_count: 5
+    app_log: "app.log"
+    error_log: "error.log"
+  format: "%(asctime)s | %(levelname)-8s | %(name)s:%(funcName)s:%(lineno)d | %(message)s"
