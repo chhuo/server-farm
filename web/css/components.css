@@ -305,3 +305,199 @@
     border-radius: 3px 3px 0 0;
     transition: height var(--transition-base), background var(--transition-base);
 }
+
+/* ── 对话框 ── */
+.dialog-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 200;
+    animation: fadeIn var(--transition-fast);
+}
+
+.dialog {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    width: 420px;
+    max-width: 90vw;
+    box-shadow: var(--shadow-lg);
+    animation: slideUp var(--transition-base);
+}
+
+@keyframes slideUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.dialog-header {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border-subtle);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.dialog-title {
+    font-size: 1.05rem;
+    font-weight: 600;
+}
+
+.dialog-close {
+    font-size: 1.1rem;
+    padding: 4px 8px;
+    border-radius: var(--radius-sm);
+    color: var(--text-muted);
+    transition: all var(--transition-fast);
+}
+
+.dialog-close:hover {
+    background: var(--bg-card-hover);
+    color: var(--text-primary);
+}
+
+.dialog-body {
+    padding: 20px;
+}
+
+/* ── 表单 ── */
+.form-group {
+    margin-bottom: 16px;
+}
+
+.form-label {
+    display: block;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    margin-bottom: 6px;
+    font-weight: 500;
+}
+
+.form-input {
+    width: 100%;
+    padding: 10px 14px;
+    background: var(--bg-input);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    font-family: var(--font-mono);
+    font-size: 0.9rem;
+    transition: border-color var(--transition-fast);
+    outline: none;
+}
+
+.form-input:focus {
+    border-color: var(--accent-blue);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.form-input::placeholder {
+    color: var(--text-muted);
+}
+
+.form-tip {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    padding: 10px 14px;
+    background: rgba(59, 130, 246, 0.06);
+    border-radius: var(--radius-sm);
+    margin-bottom: 16px;
+    line-height: 1.5;
+}
+
+.form-tip code {
+    background: var(--bg-primary);
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 0.8rem;
+}
+
+.form-actions {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+}
+
+.form-message {
+    margin-top: 12px;
+    font-size: 0.85rem;
+    text-align: center;
+    min-height: 20px;
+    color: var(--text-secondary);
+}
+
+.form-message.error {
+    color: var(--accent-red);
+}
+
+.form-message.success {
+    color: var(--accent-green);
+}
+
+/* ── 按钮 ── */
+.btn {
+    padding: 8px 18px;
+    border-radius: var(--radius-sm);
+    font-size: 0.9rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    border: 1px solid transparent;
+}
+
+.btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.btn-primary {
+    background: var(--accent-blue);
+    color: #fff;
+}
+
+.btn-primary:hover:not(:disabled) {
+    background: var(--accent-blue-dim);
+    box-shadow: var(--shadow-glow-blue);
+}
+
+.btn-secondary {
+    background: var(--bg-primary);
+    color: var(--text-secondary);
+    border-color: var(--border-color);
+}
+
+.btn-secondary:hover:not(:disabled) {
+    background: var(--bg-card-hover);
+    color: var(--text-primary);
+}
+
+.add-node-btn {
+    padding: 6px 14px;
+    border-radius: var(--radius-sm);
+    font-size: 0.85rem;
+    font-weight: 500;
+    background: rgba(59, 130, 246, 0.12);
+    color: var(--accent-blue);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    border: 1px solid rgba(59, 130, 246, 0.2);
+}
+
+.add-node-btn:hover {
+    background: rgba(59, 130, 246, 0.2);
+    box-shadow: var(--shadow-glow-blue);
+}
