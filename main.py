@@ -23,6 +23,7 @@ from services.storage import FileStore
 from services.peer_service import PeerService
 from services.audit import AuditService
 from services.task_service import TaskService
+from services.auth import AuthService
 
 
 def create_app() -> FastAPI:
@@ -48,6 +49,9 @@ def create_app() -> FastAPI:
 
     # Peer 同步服务（传入 task_service 用于心跳任务转发）
     peer_service = PeerService(node_identity, storage, config, task_service)
+
+    # ── Phase 4: 认证 ──
+    auth_service = AuthService(config, storage)
 
     # ── 生命周期管理 ──
     @asynccontextmanager
@@ -84,6 +88,45 @@ def create_app() -> FastAPI:
     app.state.peer_service = peer_service
     app.state.audit_service = audit_service
     app.state.task_service = task_service
+    app.state.auth_service = auth_service
+
+    # ── 认证中间件 ──
+    from starlette.middleware.base import BaseHTTPMiddleware
+    from starlette.responses import JSONResponse
+
+    class AuthMiddleware(BaseHTTPMiddleware):
+        # 不需要认证的 API 路径前缀
+        EXEMPT_PREFIXES = (
+            "/api/v1/auth/",
+            "/api/v1/peer/",
+            "/api/v1/system/info",
+        )
+
+        async def dispatch(self, request, call_next):
+            path = request.url.path
+
+            # 静态资源和 SPA 页面 — 免认证
+            if not path.startswith("/api/"):
+                return await call_next(request)
+
+            # 免认证 API 路径
+            for exempt in self.EXEMPT_PREFIXES:
+                if path == exempt or path.startswith(exempt):
+                    return await call_next(request)
+
+            # 检查 Token
+            token = request.cookies.get("token", "")
+            session = auth_service.validate_token(token)
+
+            if not session:
+                return JSONResponse(
+                    status_code=401,
+                    content={"error": "未登录或会话已过期"},
+                )
+
+            return await call_next(request)
+
+    app.add_middleware(AuthMiddleware)
 
     # ── 注册 API 路由 ──
     app.include_router(v1_router)
