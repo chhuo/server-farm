@@ -36,16 +36,18 @@ class PeerService:
     - Relay 模式：运行心跳循环
     """
 
-    def __init__(self, node_identity, storage, config):
+    def __init__(self, node_identity, storage, config, task_service=None):
         """
         Args:
             node_identity: NodeIdentity 实例
             storage: FileStore 实例
             config: ConfigManager 实例
+            task_service: TaskService 实例（可选，用于心跳任务转发）
         """
         self._node = node_identity
         self._storage = storage
         self._config = config
+        self._task_service = task_service
 
         # 版本号（每次数据变更递增）
         self._version: int = 0
@@ -268,12 +270,15 @@ class PeerService:
         try:
             system_info = collect_system_info()
 
+            # 收集已完成的任务结果
+            task_results = self._collect_completed_task_results()
+
             payload = {
                 "node_id": self._node.node_id,
                 "node_key": self._node.node_key,
                 "mode": self._node.mode.value,
                 "system_info": system_info,
-                "task_results": [],
+                "task_results": task_results,
             }
 
             async with httpx.AsyncClient(timeout=timeout) as client:
@@ -289,6 +294,13 @@ class PeerService:
                 self._storage.write(NODES_FILE, data["nodes"])
             if data.get("states"):
                 self._storage.write(STATES_FILE, data["states"])
+
+            # 处理 Primary 下发的任务
+            pending_tasks = data.get("tasks", [])
+            if pending_tasks and self._task_service:
+                for task_data in pending_tasks:
+                    _logger.info(f"收到 Primary 下发的任务: {task_data.get('task_id')}")
+                    asyncio.create_task(self._execute_relay_task(task_data))
 
             return data.get("accepted", True)
 
@@ -521,12 +533,22 @@ class PeerService:
         all_nodes = self._storage.read(NODES_FILE, {})
         all_states = self._storage.read(STATES_FILE, {})
 
+        # 获取待分发给该 Relay 的任务
+        pending_tasks = []
+        if self._task_service:
+            pending_tasks = self._task_service.get_pending_tasks_for_relay(relay_id)
+
+        # 处理 Relay 上报的任务结果
+        task_results = request_data.get("task_results", [])
+        if task_results and self._task_service:
+            self._task_service.report_task_results(task_results)
+
         return {
             "accepted": True,
             "nodes": all_nodes,
             "states": all_states,
             "current_version": self._version,
-            "tasks": [],  # Phase 3
+            "tasks": pending_tasks,
         }
 
     def get_all_nodes(self) -> dict:
@@ -541,3 +563,41 @@ class PeerService:
         """获取指定节点的状态"""
         states = self._storage.read(STATES_FILE, {})
         return states.get(node_id)
+
+    # ──────────────────────────────────────────
+    # Relay 任务处理
+    # ──────────────────────────────────────────
+
+    def _collect_completed_task_results(self) -> list[dict]:
+        """收集已完成的任务结果，用于心跳上报给 Primary"""
+        if not self._task_service:
+            return []
+
+        results = []
+        tasks = self._task_service.list_tasks(limit=20)
+        for task in tasks:
+            if task.get("status") in ("completed", "failed", "timeout"):
+                if not task.get("_reported", False):
+                    results.append(task)
+                    # 标记为已上报
+                    task["_reported"] = True
+                    self._task_service._save_task(task)
+
+        return results
+
+    async def _execute_relay_task(self, task_data: dict):
+        """在 Relay 端执行从 Primary 收到的任务"""
+        if not self._task_service:
+            return
+
+        task_id = task_data.get("task_id", "")
+        command = task_data.get("command", "")
+
+        _logger.info(f"Relay 执行任务: {task_id}: {command[:60]}")
+
+        # 保存任务到本地
+        self._task_service._save_task(task_data)
+
+        # 执行
+        await self._task_service.execute_task(task_id)
+

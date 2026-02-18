@@ -7,6 +7,7 @@ from fastapi import APIRouter
 from api.v1.system import router as system_router
 from api.v1.peer import router as peer_router
 from api.v1.nodes import router as nodes_router
+from api.v1.tasks import router as tasks_router
 
 router = APIRouter(prefix="/api/v1")
 
@@ -14,3 +15,4 @@ router = APIRouter(prefix="/api/v1")
 router.include_router(system_router)
 router.include_router(peer_router)
 router.include_router(nodes_router)
+router.include_router(tasks_router)

@@ -21,6 +21,8 @@ from api.deps import init_deps
 from api.v1.router import router as v1_router
 from services.storage import FileStore
 from services.peer_service import PeerService
+from services.audit import AuditService
+from services.task_service import TaskService
 
 
 def create_app() -> FastAPI:
@@ -40,8 +42,12 @@ def create_app() -> FastAPI:
     node_identity = NodeIdentity(config, storage)
     node_identity.initialize()
 
-    # Peer 同步服务
-    peer_service = PeerService(node_identity, storage, config)
+    # ── Phase 3: 审计 + 任务 ──
+    audit_service = AuditService(storage)
+    task_service = TaskService(node_identity, storage, config, audit_service)
+
+    # Peer 同步服务（传入 task_service 用于心跳任务转发）
+    peer_service = PeerService(node_identity, storage, config, task_service)
 
     # ── 生命周期管理 ──
     @asynccontextmanager
@@ -76,6 +82,8 @@ def create_app() -> FastAPI:
     app.state.storage = storage
     app.state.node_identity = node_identity
     app.state.peer_service = peer_service
+    app.state.audit_service = audit_service
+    app.state.task_service = task_service
 
     # ── 注册 API 路由 ──
     app.include_router(v1_router)
