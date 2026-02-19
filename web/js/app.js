@@ -102,10 +102,6 @@
                         您正在使用系统自动生成的初始密码，建议立即修改以保障安全。
                     </p>
                     <div class="form-group">
-                        <label class="form-label">原密码（初始密码）</label>
-                        <input type="password" class="form-input" id="init-old-password">
-                    </div>
-                    <div class="form-group">
                         <label class="form-label">新密码（至少 6 位）</label>
                         <input type="password" class="form-input" id="init-new-password">
                     </div>
@@ -128,12 +124,11 @@
         });
 
         document.getElementById('init-confirm-btn').addEventListener('click', async () => {
-            const oldPass = document.getElementById('init-old-password').value;
             const newPass = document.getElementById('init-new-password').value;
             const confirmPass = document.getElementById('init-confirm-password').value;
             const errEl = document.getElementById('init-password-error');
 
-            if (!oldPass || !newPass || !confirmPass) {
+            if (!newPass || !confirmPass) {
                 errEl.textContent = '请填写所有字段';
                 errEl.style.display = 'block';
                 return;
@@ -154,8 +149,7 @@
             btn.textContent = '修改中...';
 
             try {
-                const result = await API.post('/api/v1/auth/change-password', {
-                    old_password: oldPass,
+                const result = await API.post('/api/v1/auth/setup-password', {
                     new_password: newPass,
                 });
                 if (result.error) {

@@ -74,6 +74,41 @@ async def auth_status(request: Request):
         return result
 
 
+@router.post("/setup-password")
+async def setup_password(request: Request):
+    """
+    首次启动设置新密码（无需输入原密码）。
+    仅在 setup_required=true 时有效。
+    """
+    auth_service = request.app.state.auth_service
+
+    # 验证登录
+    token = request.cookies.get("token", "")
+    session = auth_service.validate_token(token)
+    if not session:
+        return {"error": "请先登录"}
+
+    # 仅在首次设置时有效
+    if not auth_service.is_setup_required():
+        return {"error": "初始密码已修改，请使用修改密码功能"}
+
+    data = await request.json()
+    new_password = data.get("new_password", "")
+
+    if not new_password:
+        return {"error": "请输入新密码"}
+
+    if len(new_password) < 6:
+        return {"error": "新密码至少 6 位"}
+
+    # 用初始密码作为 old_password 完成修改
+    old_password = auth_service.get_initial_password()
+    if auth_service.change_password(old_password, new_password):
+        return {"success": True, "message": "密码已设置"}
+    else:
+        return {"error": "设置失败，请重试"}
+
+
 @router.post("/change-password")
 async def change_password(request: Request):
     """修改密码"""
