@@ -53,6 +53,7 @@ _BUILTIN_DEFAULTS: dict[str, Any] = {
         "name": "",
         "mode": "auto",
         "primary_server": "",
+        "public_url": "",
     },
     "peer": {
         "sync_interval": 30,

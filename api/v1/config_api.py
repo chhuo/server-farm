@@ -20,7 +20,6 @@ async def get_config(request: Request):
     config = request.app.state.config
     node_identity = request.app.state.node_identity
 
-    # 构建安全的配置视图
     safe_config = {
         "app": {
             "name": config.get("app.name"),
@@ -36,6 +35,7 @@ async def get_config(request: Request):
             "id": node_identity.node_id,
             "name": node_identity.name,
             "mode": node_identity.mode.value,
+            "public_url": config.get("node.public_url", ""),
             "primary_server": config.get("node.primary_server", ""),
         },
         "peer": {
@@ -48,7 +48,6 @@ async def get_config(request: Request):
         "security": {
             "admin_user": config.get("security.admin_user"),
             "command_blacklist": config.get("security.command_blacklist", []),
-            # 密码和 key 不暴露
         },
         "logging": {
             "level": config.get("logging.level"),
@@ -62,17 +61,13 @@ async def get_config(request: Request):
 
 @router.post("/update")
 async def update_config(request: Request):
-    """
-    更新配置（写入 config.yaml 并热重载）。
-    仅允许修改安全的字段。
-    """
+    """更新配置（写入 config.yaml）。仅允许修改白名单字段。"""
     config = request.app.state.config
     data = await request.json()
 
-    # 允许修改的字段白名单
     allowed_fields = {
         "app.debug", "app.env",
-        "node.name", "node.mode", "node.primary_server",
+        "node.name", "node.mode", "node.primary_server", "node.public_url",
         "peer.sync_interval", "peer.heartbeat_interval",
         "peer.timeout", "peer.max_fanout", "peer.max_heartbeat_failures",
         "security.command_blacklist",
@@ -91,7 +86,6 @@ async def update_config(request: Request):
             rejected.append(key)
 
     if applied:
-        # 保存到 config.yaml
         _save_config_yaml(config)
         _logger.info(f"配置已更新: {list(applied.keys())}")
 
@@ -119,7 +113,6 @@ async def update_blacklist(request: Request):
     config.set("security.command_blacklist", blacklist)
     _save_config_yaml(config)
 
-    # 更新执行器的黑名单
     task_service = request.app.state.task_service
     task_service._executor._blacklist = blacklist
 
@@ -131,20 +124,11 @@ def _save_config_yaml(config):
     """保存配置到 config.yaml"""
     config_path = os.path.join(config.project_root, "config.yaml")
     try:
-        # 读取现有配置
         current = {}
         if os.path.isfile(config_path):
             with open(config_path, "r", encoding="utf-8") as f:
                 current = yaml.safe_load(f) or {}
 
-        # 合并已修改的值
-        def set_nested(d, key, value):
-            parts = key.split(".")
-            for part in parts[:-1]:
-                d = d.setdefault(part, {})
-            d[parts[-1]] = value
-
-        # 从 config 对象获取最新的完整配置
         sections = ["app", "server", "node", "peer", "security", "logging"]
         for section in sections:
             section_data = config.get(section, {})

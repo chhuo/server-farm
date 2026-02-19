@@ -160,6 +160,7 @@ class NodeIdentity:
             "mode": self._mode.value,
             "host": self._host,
             "port": self._port,
+            "public_url": self._config.get("node.public_url", ""),
             "primary_server": self._config.get("node.primary_server", ""),
             "registered_at": time.time(),
             "node_key_hash": hashlib.sha256(self._node_key.encode()).hexdigest()[:16],
