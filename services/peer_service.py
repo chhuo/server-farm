@@ -173,7 +173,7 @@ class PeerService:
 
         发送本地的增量数据，接收对方的增量数据并合并。
         """
-        peer_url = f"http://{peer['host']}:{peer['port']}"
+        peer_url = peer.get("public_url") or f"http://{peer['host']}:{peer['port']}"
         peer_id = peer.get("node_id", "unknown")
 
         try:
@@ -329,7 +329,7 @@ class PeerService:
         timeout = self._config.get("peer.timeout", 5)
 
         for candidate in full_nodes:
-            candidate_url = f"http://{candidate['host']}:{candidate['port']}"
+            candidate_url = candidate.get("public_url") or f"http://{candidate['host']}:{candidate['port']}"
             if candidate_url == self._current_primary:
                 continue  # 跳过当前已失败的 Primary
 
@@ -380,7 +380,7 @@ class PeerService:
                 ]
 
                 for candidate in full_nodes:
-                    candidate_url = f"http://{candidate['host']}:{candidate['port']}"
+                    candidate_url = candidate.get("public_url") or f"http://{candidate['host']}:{candidate['port']}"
                     try:
                         async with httpx.AsyncClient(timeout=timeout) as client:
                             resp = await client.get(f"{candidate_url}/api/v1/system/info")
@@ -600,4 +600,3 @@ class PeerService:
 
         # 执行
         await self._task_service.execute_task(task_id)
-
