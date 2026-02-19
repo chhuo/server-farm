@@ -642,6 +642,53 @@
     font-size: 0.85rem;
 }
 
+/* ── 初始凭据提示框 ── */
+.initial-creds-box {
+    background: color-mix(in srgb, var(--accent-yellow) 12%, var(--bg-secondary));
+    border: 1px solid color-mix(in srgb, var(--accent-yellow) 40%, transparent);
+    border-radius: var(--radius-md);
+    padding: 14px 16px;
+    margin-bottom: 20px;
+}
+
+.initial-creds-title {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--accent-yellow);
+    margin-bottom: 10px;
+}
+
+.initial-creds-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 6px;
+}
+
+.initial-creds-label {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    width: 48px;
+    flex-shrink: 0;
+}
+
+.initial-creds-value {
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+    color: var(--text-primary);
+    background: var(--bg-primary);
+    padding: 2px 8px;
+    border-radius: var(--radius-sm);
+    letter-spacing: 0.03em;
+    user-select: all;
+}
+
+.initial-creds-tip {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    margin-top: 8px;
+}
+
 /* ── 登录页 ── */
 .login-container {
     display: flex;

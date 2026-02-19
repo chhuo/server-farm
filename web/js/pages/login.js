@@ -6,6 +6,7 @@
 const LoginPage = {
     title: '登录',
     _isFullScreen: true,
+    _setupRequired: false,
 
     render() {
         return `
@@ -15,6 +16,20 @@ const LoginPage = {
                         <div class="login-logo-icon">⬡</div>
                         <h1 class="login-title">NodePanel</h1>
                         <p class="login-subtitle">分布式服务器控制面板</p>
+                    </div>
+
+                    <div id="initial-creds-box" style="display:none"
+                         class="initial-creds-box">
+                        <div class="initial-creds-title">⚠️ 首次启动 — 默认管理员凭据</div>
+                        <div class="initial-creds-row">
+                            <span class="initial-creds-label">用户名</span>
+                            <code id="initial-creds-user" class="initial-creds-value"></code>
+                        </div>
+                        <div class="initial-creds-row">
+                            <span class="initial-creds-label">密码</span>
+                            <code id="initial-creds-pass" class="initial-creds-value"></code>
+                        </div>
+                        <div class="initial-creds-tip">登录后建议立即修改密码</div>
                     </div>
 
                     <form class="login-form" id="login-form">
@@ -35,12 +50,6 @@ const LoginPage = {
                             登 录
                         </button>
                     </form>
-
-                    <div class="login-footer">
-                        <span id="setup-hint" style="display:none">
-                            首次启动？请查看终端输出获取初始密码
-                        </span>
-                    </div>
                 </div>
             </div>
         `;
@@ -65,8 +74,19 @@ const LoginPage = {
         try {
             const data = await API.get('/api/v1/auth/status');
             if (data.setup_required) {
-                const hint = document.getElementById('setup-hint');
-                if (hint) hint.style.display = 'block';
+                this._setupRequired = true;
+                const box = document.getElementById('initial-creds-box');
+                const userEl = document.getElementById('initial-creds-user');
+                const passEl = document.getElementById('initial-creds-pass');
+                if (box) box.style.display = 'block';
+                if (userEl) userEl.textContent = data.initial_user || 'admin';
+                if (passEl) passEl.textContent = data.initial_password || '';
+
+                // 自动填入登录框
+                const loginUser = document.getElementById('login-user');
+                const loginPass = document.getElementById('login-pass');
+                if (loginUser) loginUser.value = data.initial_user || 'admin';
+                if (loginPass) loginPass.value = data.initial_password || '';
             }
         } catch { }
     },
@@ -98,9 +118,12 @@ const LoginPage = {
                 btnEl.disabled = false;
                 btnEl.textContent = '登 录';
             } else {
-                // 登录成功，跳转到面板
+                // 登录成功，记录是否需要提示修改密码
+                if (this._setupRequired) {
+                    sessionStorage.setItem('showChangePassword', '1');
+                }
+                // 跳转到面板
                 window.location.hash = '#/dashboard';
-                // 需要刷新以加载侧边栏
                 window.location.reload();
             }
         } catch (err) {

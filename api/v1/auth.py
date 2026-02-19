@@ -62,10 +62,16 @@ async def auth_status(request: Request):
             "user": session["user"],
         }
     else:
-        return {
+        setup_required = auth_service.is_setup_required()
+        result = {
             "authenticated": False,
-            "setup_required": auth_service.is_setup_required(),
+            "setup_required": setup_required,
         }
+        if setup_required:
+            auth_data = auth_service._storage.read("auth.json", {})
+            result["initial_user"] = auth_data.get("admin_user", "admin")
+            result["initial_password"] = auth_service.get_initial_password()
+        return result
 
 
 @router.post("/change-password")

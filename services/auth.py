@@ -112,12 +112,6 @@ class AuthService:
         }
 
         _logger.info(f"登录成功: {username}")
-
-        # 清除首次启动临时密码
-        if auth_data.get("initial_password"):
-            del auth_data["initial_password"]
-            self._storage.write("auth.json", auth_data)
-
         return token
 
     def logout(self, token: str) -> bool:
@@ -157,6 +151,9 @@ class AuthService:
             return False
 
         auth_data["admin_password_hash"] = self._hash_password(new_password)
+        # 修改密码成功后清除首次启动临时密码
+        if "initial_password" in auth_data:
+            del auth_data["initial_password"]
         self._storage.write("auth.json", auth_data)
         _logger.info("管理员密码已修改")
         return True
