@@ -66,8 +66,8 @@ const NodesPage = {
                     <div class="dialog-body">
                         <div class="form-group">
                             <label class="form-label">主机地址</label>
-                            <input type="text" class="form-input" id="add-node-host"
-                                   placeholder="IP 或域名，如 192.168.1.100">
+                        <input type="text" class="form-input" id="add-node-host"
+                                   placeholder="IP、域名或完整 URL，如 192.168.1.100 或 https://example.com">
                         </div>
                         <div class="form-group">
                             <label class="form-label">端口</label>
@@ -75,7 +75,8 @@ const NodesPage = {
                                    value="8300" placeholder="8300">
                         </div>
                         <div class="form-tip">
-                            💡 无公网 IP 的服务器请在目标机器上配置 <code>node.primary_server</code>
+                            💡 支持输入 IP、域名或完整 URL（如 <code>https://example.com</code>）。
+                            无公网 IP 的服务器请在目标机器上配置 <code>node.primary_server</code>
                             指向有公网 IP 的 Full 节点，Relay 模式会自动连接并上报状态。
                         </div>
                         <div class="form-actions">

@@ -84,19 +84,45 @@ async def add_node(request: Request):
     手动添加节点。
 
     向目标地址发送握手请求，成功后加入本地节点表。
+    支持以下输入格式：
+      - 纯 IP/域名: 192.168.1.100
+      - 带端口:     192.168.1.100:9000
+      - 完整 URL:   https://servers.example.com
+      - 完整 URL:   http://servers.example.com:9000
     """
     peer_service = request.app.state.peer_service
     data = await request.json()
 
-    host = data.get("host", "")
+    raw_host = data.get("host", "").strip()
     port = data.get("port", 8300)
 
-    if not host:
+    if not raw_host:
         return {"error": "host 不能为空"}
 
     import httpx
+    from urllib.parse import urlparse
 
-    target_url = f"http://{host}:{port}"
+    # 解析输入，支持完整 URL 或纯域名/IP
+    if "://" in raw_host:
+        parsed = urlparse(raw_host)
+        scheme = parsed.scheme or "http"
+        host = parsed.hostname or raw_host
+        if parsed.port:
+            port = parsed.port
+    else:
+        scheme = "http"
+        # 处理 host:port 格式
+        if ":" in raw_host and not raw_host.startswith("["):
+            parts = raw_host.rsplit(":", 1)
+            try:
+                port = int(parts[1])
+                host = parts[0]
+            except ValueError:
+                host = raw_host
+        else:
+            host = raw_host
+
+    target_url = f"{scheme}://{host}:{port}"
 
     try:
         async with httpx.AsyncClient(timeout=10) as client:
