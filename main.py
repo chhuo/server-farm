@@ -105,6 +105,7 @@ def create_app() -> FastAPI:
             "/api/v1/auth/",
             "/api/v1/peer/",
             "/api/v1/system/info",
+            "/api/v1/nodes/self",
         )
 
         async def dispatch(self, request, call_next):
