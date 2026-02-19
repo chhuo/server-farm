@@ -146,6 +146,7 @@ async def add_node(request: Request):
             "mode": remote_info.get("mode", "full"),
             "host": host,
             "port": port,
+            "public_url": remote_info.get("public_url") or target_url,
             "registered_at": remote_info.get("registered_at", __import__("time").time()),
         }
 
