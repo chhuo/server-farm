@@ -50,8 +50,12 @@ async def get_self_node(request: Request):
 
     self_state = peer_service.get_node_state(node_identity.node_id)
 
+    nodes = peer_service.get_all_nodes()
+    self_node = nodes.get(node_identity.node_id, {})
+
     return {
         **node_identity.to_dict(),
+        "public_url": self_node.get("public_url", ""),
         "status": "online",
         "system_info": self_state.get("system_info", {}) if self_state else {},
     }

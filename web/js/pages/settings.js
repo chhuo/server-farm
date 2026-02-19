@@ -37,6 +37,14 @@ const SettingsPage = {
                     </div>
                 </div>
 
+                <!-- 日志设置 -->
+                <div class="panel settings-section">
+                    <h3 class="section-title">📋 日志设置</h3>
+                    <div id="settings-logging" class="settings-items">
+                        <div class="loading"><div class="loading-spinner"></div> 加载中...</div>
+                    </div>
+                </div>
+
                 <!-- 命令黑名单 -->
                 <div class="panel settings-section">
                     <h3 class="section-title">🚫 命令黑名单</h3>
@@ -96,10 +104,31 @@ const SettingsPage = {
                     ${this._renderSetting('节点 ID', cfg.node?.id || '--', 'mono')}
                     ${this._renderSetting('节点名称', cfg.node?.name || '--')}
                     ${this._renderSetting('运行模式', cfg.node?.mode || '--')}
+                    ${this._renderEditableTextSetting('公网地址', cfg.node?.public_url || '', 'node.public_url', 'https://your-server.example.com')}
                     ${this._renderSetting('Primary 地址', cfg.node?.primary_server || '(无/本机为 Full)')}
                     ${this._renderSetting('应用版本', `${cfg.app?.name} v${cfg.app?.version}`)}
                     ${this._renderSetting('运行环境', cfg.app?.env || '--')}
                     ${this._renderSetting('调试模式', cfg.app?.debug ? '开启' : '关闭')}
+                `;
+            }
+
+            // 日志设置
+            const logEl = document.getElementById('settings-logging');
+            if (logEl) {
+                const levelOptions = ['debug', 'info', 'warning', 'error'];
+                const currentLevel = cfg.logging?.level || 'info';
+                logEl.innerHTML = `
+                    <div class="setting-row">
+                        <div class="setting-label">日志级别</div>
+                        <div class="setting-value-edit">
+                            <select class="form-input setting-input" data-key="logging.level" style="width:auto">
+                                ${levelOptions.map(l => `<option value="${l}" ${l === currentLevel ? 'selected' : ''}>${l}</option>`).join('')}
+                            </select>
+                            <button class="btn-sm" onclick="SettingsPage._saveSelectSetting('logging.level', this)">保存</button>
+                        </div>
+                    </div>
+                    ${this._renderSetting('控制台输出', cfg.logging?.console_enabled ? '开启' : '关闭')}
+                    ${this._renderSetting('文件输出', cfg.logging?.file_enabled ? '开启' : '关闭')}
                 `;
             }
 
@@ -128,6 +157,20 @@ const SettingsPage = {
         `;
     },
 
+    _renderEditableTextSetting(label, value, configKey, placeholder = '') {
+        return `
+            <div class="setting-row">
+                <div class="setting-label">${label}</div>
+                <div class="setting-value-edit">
+                    <input type="text" class="form-input setting-input"
+                           value="${value}" placeholder="${placeholder}" data-key="${configKey}"
+                           style="min-width:220px">
+                    <button class="btn-sm" onclick="SettingsPage._saveTextSetting('${configKey}', this)">保存</button>
+                </div>
+            </div>
+        `;
+    },
+
     _renderEditableSetting(label, value, configKey, unit) {
         return `
             <div class="setting-row">
@@ -140,6 +183,38 @@ const SettingsPage = {
                 </div>
             </div>
         `;
+    },
+
+    async _saveTextSetting(key, btnEl) {
+        const row = btnEl.closest('.setting-value-edit');
+        const input = row.querySelector('input');
+        const value = input.value.trim();
+
+        btnEl.textContent = '...';
+        try {
+            await API.post('/api/v1/config/update', { updates: { [key]: value } });
+            btnEl.textContent = '✓';
+            setTimeout(() => btnEl.textContent = '保存', 1500);
+        } catch (err) {
+            btnEl.textContent = '✗';
+            setTimeout(() => btnEl.textContent = '保存', 1500);
+        }
+    },
+
+    async _saveSelectSetting(key, btnEl) {
+        const row = btnEl.closest('.setting-value-edit');
+        const select = row.querySelector('select');
+        const value = select.value;
+
+        btnEl.textContent = '...';
+        try {
+            await API.post('/api/v1/config/update', { updates: { [key]: value } });
+            btnEl.textContent = '✓';
+            setTimeout(() => btnEl.textContent = '保存', 1500);
+        } catch (err) {
+            btnEl.textContent = '✗';
+            setTimeout(() => btnEl.textContent = '保存', 1500);
+        }
     },
 
     async _saveSetting(key, btnEl) {

@@ -65,19 +65,13 @@ const NodesPage = {
                     </div>
                     <div class="dialog-body">
                         <div class="form-group">
-                            <label class="form-label">主机地址</label>
-                        <input type="text" class="form-input" id="add-node-host"
-                                   placeholder="IP、域名或完整 URL，如 192.168.1.100 或 https://example.com">
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label">端口</label>
-                            <input type="number" class="form-input" id="add-node-port"
-                                   value="8300" placeholder="8300">
+                            <label class="form-label">节点地址</label>
+                            <input type="text" class="form-input" id="add-node-host"
+                                   placeholder="如 https://servers.example.com 或 192.168.1.100:8300">
                         </div>
                         <div class="form-tip">
-                            💡 支持输入 IP、域名或完整 URL（如 <code>https://example.com</code>）。
-                            无公网 IP 的服务器请在目标机器上配置 <code>node.primary_server</code>
-                            指向有公网 IP 的 Full 节点，Relay 模式会自动连接并上报状态。
+                            💡 输入对方节点的访问地址（IP、域名或完整 URL）。
+                            无公网 IP 的节点请在目标机器的 <code>node.public_url</code> 中配置对外地址。
                         </div>
                         <div class="form-actions">
                             <button class="btn btn-secondary" onclick="NodesPage._hideAddDialog()">取消</button>
@@ -186,7 +180,7 @@ const NodesPage = {
         const lastSeen = node.last_seen ?
             this._formatTimeAgo(node.last_seen) : '--';
 
-        const addr = node.host && node.port ? `${node.host}:${node.port}` : '--';
+        const addr = node.public_url || (node.host && node.port ? `${node.host}:${node.port}` : '--');
 
         return `
             <tr>
@@ -224,7 +218,7 @@ const NodesPage = {
 
     async _addNode() {
         const host = document.getElementById('add-node-host')?.value?.trim();
-        const port = parseInt(document.getElementById('add-node-port')?.value) || 8300;
+        const port = 8300;
         const msgEl = document.getElementById('add-node-message');
         const btn = document.getElementById('add-node-submit');
 
