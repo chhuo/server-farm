@@ -61,13 +61,7 @@ class AuthService:
             auth_data["admin_password_hash"] = password_hash
             auth_data["initial_password"] = random_password  # 保留以供首次登录查看
             self._storage.write("auth.json", auth_data)
-
-            _logger.warning("=" * 50)
-            _logger.warning(f"  首次启动 — 管理员密码已生成")
-            _logger.warning(f"  用户名: {auth_data['admin_user']}")
-            _logger.warning(f"  密码:   {random_password}")
-            _logger.warning(f"  请登录后及时修改密码！")
-            _logger.warning("=" * 50)
+            _logger.debug("首次启动，管理员初始密码已生成并保存")
 
     def _hash_password(self, password: str) -> str:
         """哈希密码（SHA-256 + salt）"""

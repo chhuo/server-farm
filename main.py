@@ -6,6 +6,7 @@ NodePanel — 分布式控制台面板入口
 """
 
 import os
+import socket
 import sys
 from contextlib import asynccontextmanager
 
@@ -66,6 +67,10 @@ def create_app() -> FastAPI:
         await peer_service.start()
 
         app_logger.info(f"NodePanel 就绪 [{node_identity.mode.value} 模式]")
+
+        # 打印就绪 banner
+        _print_ready_banner(config, node_identity, auth_service)
+
         yield
 
         # 关闭
@@ -160,6 +165,57 @@ def create_app() -> FastAPI:
     )
 
     return app
+
+
+def _print_ready_banner(config, node_identity, auth_service):
+    """在所有启动日志之后打印醒目的就绪信息"""
+    host = config.get("server.host", "0.0.0.0")
+    port = config.get("server.port", 8300)
+
+    # 获取实际可访问的 IP
+    if host in ("0.0.0.0", ""):
+        try:
+            local_ip = socket.gethostbyname(socket.gethostname())
+        except Exception:
+            local_ip = "127.0.0.1"
+    else:
+        local_ip = host
+
+    # ANSI 颜色（Windows 10+ 和所有 Linux/macOS 终端支持）
+    CYAN  = "\033[96m"
+    GREEN = "\033[92m"
+    YELLOW = "\033[93m"
+    BOLD  = "\033[1m"
+    RESET = "\033[0m"
+
+    mode = node_identity.mode.value
+    name = config.get("app.name", "NodePanel")
+    version = config.get("app.version", "")
+
+    lines = [
+        f"{CYAN}{'═' * 52}{RESET}",
+        f"{CYAN}  {BOLD}{name} v{version}{RESET}{CYAN}  已就绪{RESET}",
+        f"{CYAN}{'─' * 52}{RESET}",
+        f"  {GREEN}访问地址{RESET}  http://{local_ip}:{port}",
+        f"  {GREEN}本机回环{RESET}  http://127.0.0.1:{port}",
+        f"  {GREEN}节点模式{RESET}  {mode}",
+    ]
+
+    # 首次启动时显示初始密码
+    if auth_service.is_setup_required():
+        auth_data = auth_service._storage.read("auth.json", {})
+        init_user = auth_data.get("admin_user", "admin")
+        init_pass = auth_service.get_initial_password()
+        lines += [
+            f"{CYAN}{'─' * 52}{RESET}",
+            f"  {YELLOW}⚠ 初始账号{RESET}  {init_user}",
+            f"  {YELLOW}⚠ 初始密码{RESET}  {init_pass}",
+            f"  {YELLOW}  请登录后及时修改密码！{RESET}",
+        ]
+
+    lines.append(f"{CYAN}{'═' * 52}{RESET}")
+
+    print("\n" + "\n".join(lines) + "\n", flush=True)
 
 
 # 创建应用实例
