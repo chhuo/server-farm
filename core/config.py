@@ -247,8 +247,21 @@ class ConfigManager:
             return
 
         if not os.path.isfile(path):
-            self._logger.warning(f"配置文件不存在: {path}")
-            self._logger.warning("将使用内置默认配置")
+            self._logger.info(f"配置文件不存在，正在创建默认配置: {path}")
+            try:
+                import yaml as _yaml
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                with open(path, "w", encoding="utf-8") as _f:
+                    _yaml.dump(
+                        copy.deepcopy(_BUILTIN_DEFAULTS),
+                        _f,
+                        default_flow_style=False,
+                        allow_unicode=True,
+                        sort_keys=False,
+                    )
+                self._logger.info(f"已生成默认配置文件: {path}")
+            except Exception as _e:
+                self._logger.warning(f"生成默认配置文件失败: {_e}，将使用内置默认配置")
             return
 
         self._logger.info(f"正在加载配置文件: {path}")
