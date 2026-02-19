@@ -12,6 +12,7 @@ import hashlib
 import os
 import platform
 import secrets
+import socket
 import time
 from typing import Optional
 
@@ -152,13 +153,27 @@ class NodeIdentity:
                 _logger.info("未配置 primary_server，进入 Full 模式")
                 return NodeMode.FULL
 
+    def _get_actual_host(self) -> str:
+        """获取实际可访问的 IP 地址（当绑定地址为 0.0.0.0 时自动探测）"""
+        if self._host not in ("0.0.0.0", "", "::"):
+            return self._host
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect(("8.8.8.8", 80))
+            ip = s.getsockname()[0]
+            s.close()
+            return ip
+        except Exception:
+            return "127.0.0.1"
+
     def _register_self(self):
         """将自身注册到本地节点表"""
+        actual_host = self._get_actual_host()
         node_info = {
             "node_id": self._node_id,
             "name": self._name,
             "mode": self._mode.value,
-            "host": self._host,
+            "host": actual_host,
             "port": self._port,
             "public_url": self._config.get("node.public_url", ""),
             "primary_server": self._config.get("node.primary_server", ""),
