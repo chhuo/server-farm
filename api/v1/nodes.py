@@ -107,12 +107,15 @@ async def add_node(request: Request):
     from urllib.parse import urlparse
 
     # 解析输入，支持完整 URL 或纯域名/IP
+    port_specified = False
+
     if "://" in raw_host:
         parsed = urlparse(raw_host)
         scheme = parsed.scheme or "http"
         host = parsed.hostname or raw_host
         if parsed.port:
             port = parsed.port
+            port_specified = True
     else:
         scheme = "http"
         # 处理 host:port 格式
@@ -121,12 +124,13 @@ async def add_node(request: Request):
             try:
                 port = int(parts[1])
                 host = parts[0]
+                port_specified = True
             except ValueError:
                 host = raw_host
         else:
             host = raw_host
 
-    target_url = f"{scheme}://{host}:{port}"
+    target_url = f"{scheme}://{host}:{port}" if port_specified else f"{scheme}://{host}"
 
     try:
         async with httpx.AsyncClient(timeout=10) as client:
