@@ -12,6 +12,18 @@ router = APIRouter(prefix="/peer", tags=["peer"])
 _logger = get_logger("api.peer")
 
 
+@router.post("/trigger-sync")
+async def trigger_sync(request: Request):
+    """
+    手动触发一次立即同步/心跳。
+    用于前端"主动心跳"按钮，快速同步消息和数据。
+    """
+    peer_service = request.app.state.peer_service
+    _logger.info("收到手动触发同步请求")
+    result = await peer_service.trigger_sync_now()
+    return result
+
+
 @router.post("/sync")
 async def peer_sync(request: Request):
     """

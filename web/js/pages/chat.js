@@ -15,10 +15,16 @@ const ChatPage = {
             <div class="chat-container">
                 <div class="chat-header-bar">
                     <span class="chat-title">跨设备聊天</span>
-                    <span class="chat-status" id="chat-status">
-                        <span class="status-dot"></span>
-                        <span class="status-label">连接中...</span>
-                    </span>
+                    <div class="chat-header-right">
+                        <button class="sync-btn" id="sync-btn" title="主动心跳同步">
+                            <span class="sync-btn-icon" id="sync-btn-icon">⟳</span>
+                            <span class="sync-btn-label" id="sync-btn-label">同步</span>
+                        </button>
+                        <span class="chat-status" id="chat-status">
+                            <span class="status-dot"></span>
+                            <span class="status-label">连接中...</span>
+                        </span>
+                    </div>
                 </div>
                 <div class="chat-messages" id="chat-messages">
                     <div class="loading">
@@ -67,6 +73,12 @@ const ChatPage = {
 
         if (sendBtn) {
             sendBtn.addEventListener('click', () => this._sendMessage());
+        }
+
+        // 绑定同步按钮
+        const syncBtn = document.getElementById('sync-btn');
+        if (syncBtn) {
+            syncBtn.addEventListener('click', () => this._triggerSync());
         }
 
         // REST 轮询备用（每 5 秒）
@@ -258,5 +270,54 @@ const ChatPage = {
         const div = document.createElement('div');
         div.textContent = str;
         return div.innerHTML;
+    },
+
+    async _triggerSync() {
+        const btn = document.getElementById('sync-btn');
+        const icon = document.getElementById('sync-btn-icon');
+        const label = document.getElementById('sync-btn-label');
+        if (!btn) return;
+
+        // 防止重复点击
+        if (btn.classList.contains('syncing')) return;
+
+        btn.classList.add('syncing');
+        label.textContent = '同步中...';
+
+        try {
+            const result = await API.post('/api/v1/peer/trigger-sync');
+
+            if (result.success) {
+                // 同步成功后立即刷新消息
+                await this._loadMessages();
+                btn.classList.remove('syncing');
+                btn.classList.add('sync-success');
+                label.textContent = `已同步 ${result.synced_peers} 节点`;
+
+                setTimeout(() => {
+                    btn.classList.remove('sync-success');
+                    label.textContent = '同步';
+                }, 2500);
+            } else {
+                btn.classList.remove('syncing');
+                btn.classList.add('sync-fail');
+                label.textContent = result.message || '无可用节点';
+
+                setTimeout(() => {
+                    btn.classList.remove('sync-fail');
+                    label.textContent = '同步';
+                }, 2500);
+            }
+        } catch (err) {
+            console.error('手动同步失败:', err);
+            btn.classList.remove('syncing');
+            btn.classList.add('sync-fail');
+            label.textContent = '同步失败';
+
+            setTimeout(() => {
+                btn.classList.remove('sync-fail');
+                label.textContent = '同步';
+            }, 2500);
+        }
     },
 };

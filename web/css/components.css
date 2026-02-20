@@ -1030,6 +1030,74 @@
     padding: 10px 20px;
 }
 
+/* ── 聊天页头部右侧 ── */
+.chat-header-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+/* ── 主动心跳同步按钮 ── */
+.sync-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 12px;
+    border-radius: var(--radius-full);
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: var(--accent-blue);
+    background: rgba(59, 130, 246, 0.08);
+    border: 1px solid rgba(59, 130, 246, 0.2);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    white-space: nowrap;
+}
+
+.sync-btn:hover:not(.syncing) {
+    background: rgba(59, 130, 246, 0.16);
+    border-color: rgba(59, 130, 246, 0.4);
+    box-shadow: var(--shadow-glow-blue);
+}
+
+.sync-btn:active:not(.syncing) {
+    transform: scale(0.96);
+}
+
+.sync-btn-icon {
+    font-size: 1rem;
+    line-height: 1;
+    display: inline-block;
+    transition: transform 0.3s ease;
+}
+
+.sync-btn.syncing {
+    cursor: not-allowed;
+    opacity: 0.7;
+    border-color: rgba(59, 130, 246, 0.15);
+}
+
+.sync-btn.syncing .sync-btn-icon {
+    animation: sync-spin 0.8s linear infinite;
+}
+
+@keyframes sync-spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+.sync-btn.sync-success {
+    color: var(--accent-green);
+    background: rgba(16, 185, 129, 0.1);
+    border-color: rgba(16, 185, 129, 0.3);
+}
+
+.sync-btn.sync-fail {
+    color: var(--accent-red);
+    background: rgba(239, 68, 68, 0.08);
+    border-color: rgba(239, 68, 68, 0.25);
+}
+
 /* ── 信息复制中心 ── */
 .snippets-page {
     display: flex;
