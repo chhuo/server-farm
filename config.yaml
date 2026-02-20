@@ -24,7 +24,7 @@ node:
   mode: "auto"                 # auto / full / relay
   connectable: false           # 是否有公网 IP 可被其他节点直连（默认 false）
   public_url: ""               # connectable=true 时填写公网地址，如 "http://x.example.com:8300"
-  primary_server: ""           # 填写 URL → 主动连接目标 Hub 节点；空且 connectable=true → Hub 模式
+  primary_server: ""           # 可选：指定固定 Hub 节点 URL；留空则自动从已知节点中发现可连接节点
 
 peer:
   sync_interval: 30            # Full 节点间基础同步间隔（秒）

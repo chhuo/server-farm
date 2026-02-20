@@ -4,6 +4,7 @@
 在线查看和修改系统配置。
 """
 
+import asyncio
 import os
 import yaml
 from fastapi import APIRouter, Request
@@ -35,7 +36,8 @@ async def get_config(request: Request):
             "id": node_identity.node_id,
             "name": node_identity.name,
             "mode": node_identity.mode.value,
-            "public_url": config.get("node.public_url", ""),
+            "connectable": node_identity.connectable,
+            "public_url": node_identity.public_url,
             "primary_server": config.get("node.primary_server", ""),
         },
         "peer": {
@@ -63,11 +65,13 @@ async def get_config(request: Request):
 async def update_config(request: Request):
     """更新配置（写入 config.yaml）。仅允许修改白名单字段。"""
     config = request.app.state.config
+    node_identity = request.app.state.node_identity
     data = await request.json()
 
     allowed_fields = {
         "app.debug", "app.env",
-        "node.name", "node.mode", "node.primary_server", "node.public_url",
+        "node.name", "node.mode", "node.primary_server",
+        "node.public_url", "node.connectable",
         "peer.sync_interval", "peer.heartbeat_interval",
         "peer.timeout", "peer.max_fanout", "peer.max_heartbeat_failures",
         "security.command_blacklist",
@@ -77,6 +81,9 @@ async def update_config(request: Request):
     updates = data.get("updates", {})
     applied = {}
     rejected = []
+
+    # 跟踪是否需要重启同步
+    need_restart_sync = False
 
     for key, value in updates.items():
         if key in allowed_fields:
@@ -88,6 +95,21 @@ async def update_config(request: Request):
     if applied:
         _save_config_yaml(config)
         _logger.info(f"配置已更新: {list(applied.keys())}")
+
+        # 处理需要动态更新内存状态的配置
+        if "node.connectable" in applied or "node.public_url" in applied:
+            connectable = config.get("node.connectable", False)
+            public_url = config.get("node.public_url", "")
+            node_identity.update_connectable(connectable, public_url)
+            need_restart_sync = True
+
+        if "node.name" in applied:
+            node_identity.update_name(applied["node.name"])
+
+        # 重启同步循环（connectable 变更会影响同步策略）
+        if need_restart_sync:
+            peer_service = request.app.state.peer_service
+            asyncio.create_task(peer_service.restart_sync())
 
     result = {"applied": applied, "rejected": rejected}
     if rejected:

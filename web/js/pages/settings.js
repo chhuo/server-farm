@@ -102,13 +102,12 @@ const SettingsPage = {
             if (nodeEl) {
                 nodeEl.innerHTML = `
                     ${this._renderSetting('节点 ID', cfg.node?.id || '--', 'mono')}
-                    ${this._renderSetting('节点名称', cfg.node?.name || '--')}
+                    ${this._renderEditableTextSetting('节点名称', cfg.node?.name || '', 'node.name', '留空使用主机名')}
                     ${this._renderSetting('运行模式', cfg.node?.mode || '--')}
+                    ${this._renderToggleSetting('有公网 IP（可被其他节点直连）', cfg.node?.connectable ?? false, 'node.connectable')}
                     ${this._renderEditableTextSetting('公网地址', cfg.node?.public_url || '', 'node.public_url', 'https://your-server.example.com')}
-                    ${this._renderSetting('Primary 地址', cfg.node?.primary_server || '(无/本机为 Full)')}
                     ${this._renderSetting('应用版本', `${cfg.app?.name} v${cfg.app?.version}`)}
                     ${this._renderSetting('运行环境', cfg.app?.env || '--')}
-                    ${this._renderSetting('调试模式', cfg.app?.debug ? '开启' : '关闭')}
                 `;
             }
 
@@ -171,6 +170,22 @@ const SettingsPage = {
         `;
     },
 
+    _renderToggleSetting(label, value, configKey) {
+        const checked = value ? 'checked' : '';
+        return `
+            <div class="setting-row">
+                <div class="setting-label">${label}</div>
+                <div class="setting-value-edit">
+                    <label class="toggle-switch">
+                        <input type="checkbox" ${checked} onchange="SettingsPage._saveToggleSetting('${configKey}', this)">
+                        <span class="toggle-slider"></span>
+                    </label>
+                    <span class="setting-unit" style="margin-left:8px">${value ? '是' : '否'}</span>
+                </div>
+            </div>
+        `;
+    },
+
     _renderEditableSetting(label, value, configKey, unit) {
         return `
             <div class="setting-row">
@@ -214,6 +229,19 @@ const SettingsPage = {
         } catch (err) {
             btnEl.textContent = '✗';
             setTimeout(() => btnEl.textContent = '保存', 1500);
+        }
+    },
+
+    async _saveToggleSetting(key, checkboxEl) {
+        const value = checkboxEl.checked;
+        const unitEl = checkboxEl.closest('.setting-value-edit').querySelector('.setting-unit');
+        try {
+            await API.post('/api/v1/config/update', { updates: { [key]: value } });
+            if (unitEl) unitEl.textContent = value ? '是' : '否';
+        } catch (err) {
+            // 回滚
+            checkboxEl.checked = !value;
+            console.error('保存失败:', err);
         }
     },
 

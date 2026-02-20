@@ -3,9 +3,10 @@ Peer 同步服务
 
 实现：
 - Hub Full（connectable=true）：Gossip 协议，仅与其他可直连 Full 节点
-- 内网 Full（connectable=false + primary_server）：主动双向同步到 Hub 节点
-- Relay → Primary：心跳上报 + 接收任务
-- 自动故障转移：Primary 下线切换 + Temp-Full 升降级
+- 内网 Full（connectable=false）：自动从本地节点表发现可连接节点，主动双向同步
+- Relay → 自动发现可连接 Full 节点发送心跳
+- 所有模式：定期更新自身状态（CPU/内存/last_seen）
+- 自动故障转移：Temp-Full 升降级
 - 跨节点同步：聊天记录 + 信息片段
 """
 
@@ -37,8 +38,9 @@ class PeerService:
 
     根据节点模式和可达性执行不同的同步策略：
     - Hub Full（connectable）：运行 Gossip 同步循环
-    - 内网 Full（not connectable + primary_server）：主动双向同步循环
-    - Relay 模式：运行心跳循环
+    - 内网 Full（not connectable）：自动发现可连接节点，主动双向同步
+    - Relay 模式：自动发现可连接 Full 节点，运行心跳循环
+    - 所有模式：运行自身状态更新循环
     """
 
     def __init__(self, node_identity, storage, config, task_service=None):
@@ -50,12 +52,12 @@ class PeerService:
         # 版本号（每次数据变更递增）
         self._version: int = 0
 
-        # 心跳失败计数
+        # 心跳失败计数（按节点 URL 计数）
         self._heartbeat_failures: int = 0
-        self._current_primary: str = ""
 
         # 后台任务引用
         self._sync_task: Optional[asyncio.Task] = None
+        self._state_task: Optional[asyncio.Task] = None
         self._running = False
 
     # ──────────────────────────────────────────
@@ -65,7 +67,10 @@ class PeerService:
     async def start(self):
         """启动后台同步循环"""
         self._running = True
-        self._current_primary = self._config.get("node.primary_server", "")
+
+        # 所有模式：启动自身状态更新循环
+        self._state_task = asyncio.create_task(self._self_state_loop())
+        _logger.info("已启动自身状态更新循环")
 
         if self._node.is_full and self._node.connectable:
             # Hub Full：Gossip 同步（仅与其他可直连 Full 节点）
@@ -73,21 +78,33 @@ class PeerService:
             self._sync_task = asyncio.create_task(self._gossip_loop())
 
         elif self._node.is_full and not self._node.connectable:
-            # 内网 Full：主动双向同步
-            if self._current_primary:
-                _logger.info(f"启动内网 Full 模式主动同步循环 → {self._current_primary}")
-                self._sync_task = asyncio.create_task(self._active_sync_loop())
-            else:
-                _logger.warning("内网 Full 节点未配置 primary_server，无法与其他节点同步")
+            # 内网 Full：自动发现可连接节点，主动双向同步
+            _logger.info("启动内网 Full 模式主动同步循环（自动发现可连接节点）")
+            self._sync_task = asyncio.create_task(self._active_sync_loop())
 
         elif self._node.is_relay:
-            # Relay：心跳
-            _logger.info(f"启动 Relay 模式心跳循环 → {self._current_primary}")
+            # Relay：自动发现可连接 Full 节点心跳
+            _logger.info("启动 Relay 模式心跳循环（自动发现可连接节点）")
             self._sync_task = asyncio.create_task(self._heartbeat_loop())
 
     async def stop(self):
         """停止后台同步"""
         self._running = False
+        for task in [self._sync_task, self._state_task]:
+            if task:
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+        self._sync_task = None
+        self._state_task = None
+        _logger.info("同步服务已停止")
+
+    async def restart_sync(self):
+        """重启同步循环（配置变更后调用）"""
+        _logger.info("正在重启同步循环...")
+        # 停止旧的同步任务（不停 state_task）
         if self._sync_task:
             self._sync_task.cancel()
             try:
@@ -95,7 +112,72 @@ class PeerService:
             except asyncio.CancelledError:
                 pass
             self._sync_task = None
-        _logger.info("同步服务已停止")
+
+        self._heartbeat_failures = 0
+
+        # 根据新配置重新启动
+        if self._node.is_full and self._node.connectable:
+            _logger.info("重启为 Hub Full 模式 Gossip 同步")
+            self._sync_task = asyncio.create_task(self._gossip_loop())
+        elif self._node.is_full and not self._node.connectable:
+            _logger.info("重启为内网 Full 模式主动同步")
+            self._sync_task = asyncio.create_task(self._active_sync_loop())
+        elif self._node.is_relay:
+            _logger.info("重启为 Relay 模式心跳")
+            self._sync_task = asyncio.create_task(self._heartbeat_loop())
+
+    # ──────────────────────────────────────────
+    # 所有模式：自身状态更新循环
+    # ──────────────────────────────────────────
+
+    async def _self_state_loop(self):
+        """
+        定期更新自身状态到状态表。
+        
+        所有模式下都运行，确保本机的 CPU/内存/last_seen 始终是最新的。
+        """
+        interval = self._config.get("peer.heartbeat_interval", 10)
+
+        while self._running:
+            try:
+                await self._update_self_state()
+                await asyncio.sleep(interval)
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                _logger.error(f"自身状态更新异常: {e}")
+                await asyncio.sleep(interval)
+
+    # ──────────────────────────────────────────
+    # 自动发现可连接节点
+    # ──────────────────────────────────────────
+
+    def _discover_connectable_peers(self) -> list[dict]:
+        """
+        从本地节点表中自动发现所有可连接的 Full/Temp-Full 节点。
+        
+        排除自身，返回有 public_url 或可访问地址的节点列表。
+        """
+        nodes = self._storage.read(NODES_FILE, {})
+        peers = []
+        for n in nodes.values():
+            if n.get("node_id") == self._node.node_id:
+                continue
+            if n.get("mode") not in ("full", "temp_full"):
+                continue
+            if not n.get("connectable", False):
+                continue
+            # 必须有可访问的地址
+            url = n.get("public_url") or (
+                f"http://{n['host']}:{n['port']}" if n.get("host") else ""
+            )
+            if url:
+                peers.append(n)
+        return peers
+
+    def _get_peer_url(self, peer: dict) -> str:
+        """获取节点的可访问 URL"""
+        return peer.get("public_url") or f"http://{peer['host']}:{peer['port']}"
 
     # ──────────────────────────────────────────
     # Hub Full 模式：Gossip 同步
@@ -113,20 +195,20 @@ class PeerService:
 
         while self._running:
             try:
-                full_count = self._count_connectable_full_nodes()
+                peers = self._discover_connectable_peers()
+                full_count = len(peers)
                 interval = base_interval + math.log2(max(full_count, 1)) * 5
 
-                peers = self._select_gossip_peers(max_fanout)
-
                 if peers:
+                    k = min(max_fanout, len(peers))
+                    selected = random.sample(peers, k)
                     _logger.debug(
-                        f"Gossip 同步轮次: {len(peers)} 个 Peer, "
+                        f"Gossip 同步轮次: {len(selected)} 个 Peer, "
                         f"间隔 {interval:.0f}s, 可直连 Full 节点 {full_count}"
                     )
-                    tasks = [self._sync_with_peer(peer, timeout) for peer in peers]
+                    tasks = [self._sync_with_peer(peer, timeout) for peer in selected]
                     await asyncio.gather(*tasks, return_exceptions=True)
 
-                await self._update_self_state()
                 await asyncio.sleep(interval)
 
             except asyncio.CancelledError:
@@ -135,39 +217,9 @@ class PeerService:
                 _logger.error(f"Gossip 同步异常: {e}")
                 await asyncio.sleep(10)
 
-    def _count_connectable_full_nodes(self) -> int:
-        """统计已知可直连 Full 节点数量"""
-        nodes = self._storage.read(NODES_FILE, {})
-        return sum(
-            1 for n in nodes.values()
-            if n.get("mode") in ("full", "temp_full")
-            and n.get("connectable", False)
-            and n.get("node_id") != self._node.node_id
-        )
-
-    def _select_gossip_peers(self, max_fanout: int) -> list[dict]:
-        """
-        随机选择 Gossip 同步目标。
-
-        只选可直连的 Full/Temp-Full 节点，排除自身。
-        """
-        nodes = self._storage.read(NODES_FILE, {})
-        candidates = [
-            n for n in nodes.values()
-            if n.get("mode") in ("full", "temp_full")
-            and n.get("connectable", False)
-            and n.get("node_id") != self._node.node_id
-        ]
-
-        if not candidates:
-            return []
-
-        k = min(max_fanout, len(candidates))
-        return random.sample(candidates, k)
-
     async def _sync_with_peer(self, peer: dict, timeout: float):
         """与单个 Full Peer 执行增量同步（含聊天和片段）"""
-        peer_url = peer.get("public_url") or f"http://{peer['host']}:{peer['port']}"
+        peer_url = self._get_peer_url(peer)
         peer_id = peer.get("node_id", "unknown")
 
         try:
@@ -225,9 +277,8 @@ class PeerService:
         """
         内网 Full 节点主动同步循环。
 
-        定期向 Hub 节点（primary_server）发起双向数据同步。
-        与 Gossip 的区别：不会被别人连接，只能自己主动发起。
-        数据同步是双向的（发送本地数据 + 接收远端数据），与 Relay 单向心跳不同。
+        自动从本地节点表中发现可连接的 Hub 节点，
+        定期向它们发起双向数据同步。
         """
         interval = self._config.get("peer.sync_interval", 30)
         max_failures = self._config.get("peer.max_heartbeat_failures", 3)
@@ -235,26 +286,30 @@ class PeerService:
 
         while self._running:
             try:
-                if not self._current_primary:
-                    _logger.warning("内网 Full 节点未配置 primary_server，等待中...")
+                peers = self._discover_connectable_peers()
+
+                if not peers:
+                    _logger.debug("未发现可连接的 Full 节点，等待节点加入...")
                     await asyncio.sleep(interval)
                     continue
 
-                success = await self._do_active_sync(timeout)
+                # 尝试与所有可连接节点同步
+                any_success = False
+                for peer in peers:
+                    success = await self._do_active_sync(peer, timeout)
+                    if success:
+                        any_success = True
 
-                if success:
+                if any_success:
                     self._heartbeat_failures = 0
                 else:
                     self._heartbeat_failures += 1
                     _logger.warning(
-                        f"主动同步失败 ({self._heartbeat_failures}/{max_failures}): "
-                        f"{self._current_primary}"
+                        f"主动同步全部失败 ({self._heartbeat_failures}/{max_failures})"
                     )
-
                     if self._heartbeat_failures >= max_failures:
-                        await self._handle_primary_failure()
+                        await self._handle_all_peers_failure()
 
-                await self._update_self_state()
                 await asyncio.sleep(interval)
 
             except asyncio.CancelledError:
@@ -263,15 +318,17 @@ class PeerService:
                 _logger.error(f"主动同步循环异常: {e}")
                 await asyncio.sleep(interval)
 
-    async def _do_active_sync(self, timeout: float) -> bool:
-        """向 Hub 节点执行一次双向数据同步"""
+    async def _do_active_sync(self, peer: dict, timeout: float) -> bool:
+        """向一个 Hub 节点执行一次双向数据同步"""
+        peer_url = self._get_peer_url(peer)
+        peer_id = peer.get("node_id", "unknown")
+
         try:
             local_nodes = self._storage.read(NODES_FILE, {})
             local_states = self._storage.read(STATES_FILE, {})
             local_chat = self._storage.read(CHAT_FILE, [])
             local_snippets = self._storage.read(SNIPPETS_FILE, [])
 
-            # 先更新自身状态
             from services.collector import collect_system_info
             system_info = collect_system_info()
 
@@ -288,7 +345,7 @@ class PeerService:
 
             async with httpx.AsyncClient(timeout=timeout) as client:
                 resp = await client.post(
-                    f"{self._current_primary}/api/v1/peer/sync",
+                    f"{peer_url}/api/v1/peer/sync",
                     json=payload,
                 )
                 resp.raise_for_status()
@@ -314,11 +371,11 @@ class PeerService:
             if remote_version > self._version:
                 self._version = remote_version
 
-            _logger.debug(f"内网 Full 主动同步完成 (v{remote_version})")
+            _logger.debug(f"内网 Full 主动同步完成: {peer_id} (v{remote_version})")
             return True
 
         except Exception as e:
-            _logger.debug(f"主动同步失败: {e}")
+            _logger.debug(f"主动同步失败 [{peer_id}]: {e}")
             return False
 
     # ──────────────────────────────────────────
@@ -326,31 +383,37 @@ class PeerService:
     # ──────────────────────────────────────────
 
     async def _heartbeat_loop(self):
-        """Relay 心跳主循环"""
+        """Relay 心跳主循环：自动发现可连接 Full 节点"""
         interval = self._config.get("peer.heartbeat_interval", 10)
         max_failures = self._config.get("peer.max_heartbeat_failures", 3)
         timeout = self._config.get("peer.timeout", 10)
 
         while self._running:
             try:
-                if not self._current_primary:
-                    _logger.warning("未配置 Primary Server，等待中...")
+                peers = self._discover_connectable_peers()
+
+                if not peers:
+                    _logger.debug("未发现可连接的 Full 节点，等待节点加入...")
                     await asyncio.sleep(interval)
                     continue
 
-                success = await self._send_heartbeat(timeout)
+                # 向第一个可用的 Hub 节点发心跳
+                any_success = False
+                for peer in peers:
+                    success = await self._send_heartbeat(peer, timeout)
+                    if success:
+                        any_success = True
+                        break  # 心跳只需要成功一个
 
-                if success:
+                if any_success:
                     self._heartbeat_failures = 0
                 else:
                     self._heartbeat_failures += 1
                     _logger.warning(
-                        f"心跳失败 ({self._heartbeat_failures}/{max_failures}): "
-                        f"{self._current_primary}"
+                        f"心跳全部失败 ({self._heartbeat_failures}/{max_failures})"
                     )
-
                     if self._heartbeat_failures >= max_failures:
-                        await self._handle_primary_failure()
+                        await self._handle_all_peers_failure()
 
                 await asyncio.sleep(interval)
 
@@ -360,9 +423,12 @@ class PeerService:
                 _logger.error(f"心跳循环异常: {e}")
                 await asyncio.sleep(interval)
 
-    async def _send_heartbeat(self, timeout: float) -> bool:
-        """发送心跳到 Primary"""
+    async def _send_heartbeat(self, peer: dict, timeout: float) -> bool:
+        """发送心跳到指定 Hub 节点"""
         from services.collector import collect_system_info
+
+        peer_url = self._get_peer_url(peer)
+        peer_id = peer.get("node_id", "unknown")
 
         try:
             system_info = collect_system_info()
@@ -378,7 +444,7 @@ class PeerService:
 
             async with httpx.AsyncClient(timeout=timeout) as client:
                 resp = await client.post(
-                    f"{self._current_primary}/api/v1/peer/heartbeat",
+                    f"{peer_url}/api/v1/peer/heartbeat",
                     json=payload,
                 )
                 resp.raise_for_status()
@@ -400,75 +466,54 @@ class PeerService:
                 merged_snippets = self._merge_snippets(local_snippets, data["snippets"])
                 self._storage.write(SNIPPETS_FILE, merged_snippets)
 
-            # 处理 Primary 下发的任务
+            # 处理 Hub 下发的任务
             pending_tasks = data.get("tasks", [])
             if pending_tasks and self._task_service:
                 for task_data in pending_tasks:
-                    _logger.info(f"收到 Primary 下发的任务: {task_data.get('task_id')}")
+                    _logger.info(f"收到 Hub 下发的任务: {task_data.get('task_id')}")
                     asyncio.create_task(self._execute_relay_task(task_data))
 
+            _logger.debug(f"心跳成功: {peer_id}")
             return data.get("accepted", True)
 
         except Exception as e:
-            _logger.debug(f"心跳发送失败: {e}")
+            _logger.debug(f"心跳发送失败 [{peer_id}]: {e}")
             return False
 
     # ──────────────────────────────────────────
     # 故障转移
     # ──────────────────────────────────────────
 
-    async def _handle_primary_failure(self):
+    async def _handle_all_peers_failure(self):
         """
-        处理 Primary 不可达。
+        处理所有可连接节点不可达。
 
-        1. 遍历已知可直连 Full 节点，尝试切换 Primary
-        2. 所有可直连 Full 节点均不可达 → 升级为 Temp-Full
+        Relay 节点 → 升级为 Temp-Full
+        内网 Full → 记录警告，继续独立运行
         """
-        _logger.warning("Primary 连续失败，开始故障转移...")
-
-        nodes = self._storage.read(NODES_FILE, {})
-        connectable_full_nodes = [
-            n for n in nodes.values()
-            if n.get("mode") in ("full", "temp_full")
-            and n.get("connectable", False)
-            and n.get("node_id") != self._node.node_id
-        ]
-
-        timeout = self._config.get("peer.timeout", 5)
-
-        for candidate in connectable_full_nodes:
-            candidate_url = candidate.get("public_url") or f"http://{candidate['host']}:{candidate['port']}"
-            if candidate_url == self._current_primary:
-                continue
-
-            try:
-                async with httpx.AsyncClient(timeout=timeout) as client:
-                    resp = await client.get(f"{candidate_url}/api/v1/system/info")
-                    if resp.status_code == 200:
-                        self._current_primary = candidate_url
-                        self._heartbeat_failures = 0
-                        _logger.info(f"已切换 Primary: {candidate_url}")
-                        return
-            except Exception:
-                continue
-
-        # 所有可直连 Full 节点均不可达
-        _logger.warning("所有已知可直连 Full 节点均不可达")
+        _logger.warning("所有已知可连接 Full 节点均不可达")
+        self._heartbeat_failures = 0
 
         if self._node.is_relay:
             self._node.promote_to_temp_full()
-            self._heartbeat_failures = 0
 
             if self._sync_task:
                 self._sync_task.cancel()
+                try:
+                    await self._sync_task
+                except asyncio.CancelledError:
+                    pass
 
-            # Temp-Full 但不可直连 → 独立运行，无法 Gossip
+            # Temp-Full 但不可直连 → 独立运行
             if self._node.connectable:
                 self._sync_task = asyncio.create_task(self._gossip_loop())
             else:
-                _logger.warning("已升级为 Temp-Full 但无公网 IP，仅本地独立运行")
+                _logger.warning("已升级为 Temp-Full 但无公网 IP，独立运行中")
+                self._sync_task = asyncio.create_task(self._active_sync_loop())
 
             asyncio.create_task(self._watch_full_recovery())
+        else:
+            _logger.warning("内网 Full 节点无法连接任何 Hub，将在下轮重试")
 
     async def _watch_full_recovery(self):
         """监控可直连 Full 节点是否恢复"""
@@ -479,23 +524,16 @@ class PeerService:
             try:
                 await asyncio.sleep(interval)
 
-                nodes = self._storage.read(NODES_FILE, {})
-                connectable_full = [
-                    n for n in nodes.values()
-                    if n.get("mode") == "full"
-                    and n.get("connectable", False)
-                    and n.get("node_id") != self._node.node_id
-                ]
+                peers = self._discover_connectable_peers()
 
-                for candidate in connectable_full:
-                    candidate_url = candidate.get("public_url") or f"http://{candidate['host']}:{candidate['port']}"
+                for peer in peers:
+                    peer_url = self._get_peer_url(peer)
                     try:
                         async with httpx.AsyncClient(timeout=timeout) as client:
-                            resp = await client.get(f"{candidate_url}/api/v1/system/info")
+                            resp = await client.get(f"{peer_url}/api/v1/system/info")
                             if resp.status_code == 200:
-                                _logger.info(f"检测到可直连 Full 节点恢复: {candidate_url}")
+                                _logger.info(f"检测到可连接 Full 节点恢复: {peer_url}")
                                 self._node.demote_from_temp_full()
-                                self._current_primary = candidate_url
 
                                 if self._sync_task:
                                     self._sync_task.cancel()
@@ -742,7 +780,7 @@ class PeerService:
         return results
 
     async def _execute_relay_task(self, task_data: dict):
-        """在 Relay 端执行从 Primary 收到的任务"""
+        """在 Relay 端执行从 Hub 收到的任务"""
         if not self._task_service:
             return
 

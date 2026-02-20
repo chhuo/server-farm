@@ -308,6 +308,39 @@ class NodeIdentity:
         """公网可访问的 URL"""
         return self._public_url
 
+    def update_connectable(self, connectable: bool, public_url: str = ""):
+        """
+        动态更新公网可达性配置（从设置页面调用）。
+        
+        Args:
+            connectable: 是否有公网 IP
+            public_url: 公网地址
+        """
+        old_connectable = self._connectable
+        self._connectable = connectable
+        self._public_url = public_url
+
+        # 更新本地节点表
+        def updater(nodes):
+            if self._node_id in nodes:
+                nodes[self._node_id]["connectable"] = connectable
+                nodes[self._node_id]["public_url"] = public_url
+            return nodes
+        self._storage.update("nodes.json", updater, default={})
+
+        if old_connectable != connectable:
+            _logger.info(f"节点可达性已更新: connectable={connectable}, public_url={public_url}")
+
+    def update_name(self, name: str):
+        """动态更新节点显示名称"""
+        self._name = name
+        def updater(nodes):
+            if self._node_id in nodes:
+                nodes[self._node_id]["name"] = name
+            return nodes
+        self._storage.update("nodes.json", updater, default={})
+        _logger.info(f"节点名称已更新: {name}")
+
     @property
     def url(self) -> str:
         return f"http://{self._host}:{self._port}"
