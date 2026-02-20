@@ -41,6 +41,8 @@ class NodeIdentity:
         self._node_id: str = ""
         self._name: str = ""
         self._mode: NodeMode = NodeMode.FULL
+        self._connectable: bool = False
+        self._public_url: str = ""
         self._node_key: str = ""
         self._host: str = ""
         self._port: int = 8300
@@ -67,6 +69,10 @@ class NodeIdentity:
         self._host = self._config.get("server.host", "0.0.0.0")
         self._port = self._config.get("server.port", 8300)
 
+        # 公网可达性
+        self._connectable = self._config.get("node.connectable", False)
+        self._public_url = self._config.get("node.public_url", "")
+
         # 读取或生成 Node Key
         self._node_key = self._resolve_node_key()
 
@@ -80,6 +86,7 @@ class NodeIdentity:
         _logger.info(f"  ID:    {self._node_id}")
         _logger.info(f"  名称:  {self._name}")
         _logger.info(f"  模式:  {self._mode.value}")
+        _logger.info(f"  可直连: {'是 (' + self._public_url + ')' if self._connectable else '否（内网节点）'}")
         _logger.info(f"  地址:  {self._host}:{self._port}")
 
         return self
@@ -134,11 +141,23 @@ class NodeIdentity:
         return node_key
 
     def _resolve_mode(self) -> NodeMode:
-        """判断节点运行模式"""
+        """
+        判断节点运行模式。
+
+        逻辑：
+        - mode=full → Full 模式
+        - mode=relay + primary_server → Relay 模式
+        - mode=auto:
+            - 有 primary_server → Relay 模式
+            - 无 primary_server + connectable → Hub Full 模式
+            - 无 primary_server + 不可直连 → Full 模式但警告无法同步
+        """
         mode_config = self._config.get("node.mode", "auto")
         primary = self._config.get("node.primary_server", "")
 
         if mode_config == "full":
+            if not self._connectable and not primary:
+                _logger.warning("Full 模式但无公网 IP 且未配置 primary_server，节点将无法与其他节点同步")
             return NodeMode.FULL
         elif mode_config == "relay":
             if not primary:
@@ -149,8 +168,12 @@ class NodeIdentity:
             if primary:
                 _logger.info(f"检测到 primary_server 配置，自动进入 Relay 模式 → {primary}")
                 return NodeMode.RELAY
+            elif self._connectable:
+                _logger.info("可直连节点，进入 Hub Full 模式（等待其他节点连入）")
+                return NodeMode.FULL
             else:
-                _logger.info("未配置 primary_server，进入 Full 模式")
+                _logger.info("未配置 primary_server 且不可直连，进入独立 Full 模式")
+                _logger.warning("⚠️ 建议配置 primary_server 以连接 Hub 节点进行数据同步")
                 return NodeMode.FULL
 
     def _get_actual_host(self) -> str:
@@ -173,9 +196,10 @@ class NodeIdentity:
             "node_id": self._node_id,
             "name": self._name,
             "mode": self._mode.value,
+            "connectable": self._connectable,
             "host": actual_host,
             "port": self._port,
-            "public_url": self._config.get("node.public_url", ""),
+            "public_url": self._public_url,
             "primary_server": self._config.get("node.primary_server", ""),
             "registered_at": time.time(),
             "node_key_hash": hashlib.sha256(self._node_key.encode()).hexdigest()[:16],
@@ -275,6 +299,16 @@ class NodeIdentity:
         return self._port
 
     @property
+    def connectable(self) -> bool:
+        """是否有公网 IP 可被直连"""
+        return self._connectable
+
+    @property
+    def public_url(self) -> str:
+        """公网可访问的 URL"""
+        return self._public_url
+
+    @property
     def url(self) -> str:
         return f"http://{self._host}:{self._port}"
 
@@ -284,6 +318,8 @@ class NodeIdentity:
             "node_id": self._node_id,
             "name": self._name,
             "mode": self._mode.value,
+            "connectable": self._connectable,
+            "public_url": self._public_url,
             "host": self._host,
             "port": self._port,
             "is_temp_full": self._is_temp_full,

@@ -22,7 +22,9 @@ node:
   id: ""                       # 留空自动生成
   name: ""                     # 显示名称，留空用 hostname
   mode: "auto"                 # auto / full / relay
-  primary_server: ""           # 填写 URL → Relay 模式；空 → Full 模式
+  connectable: false           # 是否有公网 IP 可被其他节点直连（默认 false）
+  public_url: ""               # connectable=true 时填写公网地址，如 "http://x.example.com:8300"
+  primary_server: ""           # 填写 URL → 主动连接目标 Hub 节点；空且 connectable=true → Hub 模式
 
 peer:
   sync_interval: 30            # Full 节点间基础同步间隔（秒）
