@@ -377,6 +377,65 @@ class ConfigManager:
         """返回配置的深拷贝字典"""
         return copy.deepcopy(self._data)
 
+    def save_to_yaml(self, path: Optional[str] = None):
+        """
+        将当前配置保存到 YAML 文件。
+
+        Args:
+            path: 可选的保存路径，默认使用加载时的配置文件路径
+
+        Raises:
+            RuntimeError: 如果 PyYAML 不可用或保存失败
+        """
+        if not _yaml_available:
+            raise RuntimeError("PyYAML 未安装，无法保存配置文件")
+
+        save_path = path or self._config_file_path
+        if not save_path:
+            save_path = os.path.join(self._project_root, "config.yaml")
+
+        try:
+            # 读取现有文件内容（保留未在内存中管理的额外字段）
+            current = {}
+            if os.path.isfile(save_path):
+                with open(save_path, "r", encoding="utf-8") as f:
+                    current = yaml.safe_load(f) or {}
+
+            # 用内存中的配置覆盖各段
+            sections = ["app", "server", "node", "peer", "security", "logging"]
+            for section in sections:
+                section_data = self.get(section)
+                if isinstance(section_data, dict):
+                    current[section] = copy.deepcopy(section_data)
+
+            # YAML 文件头注释
+            header = (
+                "# ============================================================\n"
+                "# NodePanel 配置文件\n"
+                "# ============================================================\n"
+                "# 加载优先级（从低到高）：\n"
+                "#   1. 内置默认值（代码中硬编码）\n"
+                "#   2. 本文件 (config.yaml)\n"
+                "#   3. 环境变量（APP_ 前缀，双下划线 __ 表示层级）\n"
+                "#   4. 命令行参数（--config 指定的自定义文件）\n"
+                "# ============================================================\n\n"
+            )
+
+            os.makedirs(os.path.dirname(save_path) or ".", exist_ok=True)
+            with open(save_path, "w", encoding="utf-8") as f:
+                f.write(header)
+                yaml.dump(
+                    current, f,
+                    default_flow_style=False,
+                    allow_unicode=True,
+                    sort_keys=False,
+                )
+
+            self._logger.debug(f"配置已保存到 {save_path}")
+        except Exception as e:
+            self._logger.error(f"配置保存失败: {e}")
+            raise RuntimeError(f"配置保存失败: {e}") from e
+
     @property
     def config_file_path(self) -> Optional[str]:
         """返回实际使用的配置文件路径"""

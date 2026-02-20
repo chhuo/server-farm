@@ -5,8 +5,6 @@
 """
 
 import asyncio
-import os
-import yaml
 from fastapi import APIRouter, Request
 
 from core.logger import get_logger
@@ -93,7 +91,12 @@ async def update_config(request: Request):
             rejected.append(key)
 
     if applied:
-        _save_config_yaml(config)
+        # 持久化到 config.yaml
+        try:
+            config.save_to_yaml()
+        except RuntimeError as e:
+            _logger.error(f"配置保存失败: {e}")
+
         _logger.info(f"配置已更新: {list(applied.keys())}")
 
         # 处理需要动态更新内存状态的配置
@@ -133,33 +136,14 @@ async def update_blacklist(request: Request):
 
     blacklist = data.get("blacklist", [])
     config.set("security.command_blacklist", blacklist)
-    _save_config_yaml(config)
+
+    try:
+        config.save_to_yaml()
+    except RuntimeError as e:
+        _logger.error(f"黑名单保存失败: {e}")
 
     task_service = request.app.state.task_service
     task_service._executor._blacklist = blacklist
 
     _logger.info(f"命令黑名单已更新: {len(blacklist)} 条规则")
     return {"success": True, "blacklist": blacklist}
-
-
-def _save_config_yaml(config):
-    """保存配置到 config.yaml"""
-    config_path = os.path.join(config.project_root, "config.yaml")
-    try:
-        current = {}
-        if os.path.isfile(config_path):
-            with open(config_path, "r", encoding="utf-8") as f:
-                current = yaml.safe_load(f) or {}
-
-        sections = ["app", "server", "node", "peer", "security", "logging"]
-        for section in sections:
-            section_data = config.get(section, {})
-            if isinstance(section_data, dict):
-                current[section] = section_data
-
-        with open(config_path, "w", encoding="utf-8") as f:
-            yaml.dump(current, f, default_flow_style=False, allow_unicode=True)
-
-        _logger.debug("配置已保存到 config.yaml")
-    except Exception as e:
-        _logger.error(f"配置保存失败: {e}")
