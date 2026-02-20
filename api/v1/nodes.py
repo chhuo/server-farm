@@ -144,6 +144,7 @@ async def add_node(request: Request):
             "node_id": node_id,
             "name": remote_info.get("name", host),
             "mode": remote_info.get("mode", "full"),
+            "connectable": remote_info.get("connectable", False),
             "host": host,
             "port": port,
             "public_url": remote_info.get("public_url") or target_url,

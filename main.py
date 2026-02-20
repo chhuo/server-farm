@@ -40,6 +40,11 @@ def create_app() -> FastAPI:
     storage = FileStore(data_dir)
     storage.ensure_subdir("tasks")
     storage.ensure_subdir("audit")
+    # 确保聊天和片段数据文件存在
+    if not storage.exists("chat.json"):
+        storage.write("chat.json", [])
+    if not storage.exists("snippets.json"):
+        storage.write("snippets.json", [])
 
     node_identity = NodeIdentity(config, storage)
     node_identity.initialize()

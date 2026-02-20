@@ -38,6 +38,40 @@ const API = {
         }
     },
 
+    /**
+     * 发起 PUT 请求
+     */
+    async put(path, data = {}) {
+        try {
+            const res = await fetch(`${this.baseURL}${path}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data),
+            });
+            if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+            return await res.json();
+        } catch (err) {
+            console.error(`[API] PUT ${path} 失败:`, err);
+            throw err;
+        }
+    },
+
+    /**
+     * 发起 DELETE 请求
+     */
+    async delete(path) {
+        try {
+            const res = await fetch(`${this.baseURL}${path}`, {
+                method: 'DELETE',
+            });
+            if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+            return await res.json();
+        } catch (err) {
+            console.error(`[API] DELETE ${path} 失败:`, err);
+            throw err;
+        }
+    },
+
     // ── 业务 API ──
 
     /** 获取本机系统信息 */

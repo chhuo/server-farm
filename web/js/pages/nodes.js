@@ -144,6 +144,7 @@ const NodesPage = {
                         <th>名称</th>
                         <th>状态</th>
                         <th>模式</th>
+                        <th>网络</th>
                         <th>地址</th>
                         <th>CPU</th>
                         <th>内存</th>
@@ -182,11 +183,17 @@ const NodesPage = {
 
         const addr = node.public_url || (node.host && node.port ? `${node.host}:${node.port}` : '--');
 
+        const connectable = node.connectable;
+        const connectTag = connectable
+            ? '<span class="connectivity-tag public">🌐 公网</span>'
+            : '<span class="connectivity-tag private">🏠 内网</span>';
+
         return `
             <tr>
                 <td>${node.name || node.node_id}${selfBadge}</td>
                 <td><span class="tag ${statusClass}">${statusText}</span></td>
                 <td><span class="tag ${modeClass}">${modeMap[node.mode] || node.mode}</span></td>
+                <td>${connectTag}</td>
                 <td class="mono">${addr}</td>
                 <td class="mono">${cpu}</td>
                 <td class="mono">${mem}</td>

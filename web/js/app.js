@@ -11,6 +11,8 @@
     Router.register('/nodes', NodesPage);
     Router.register('/terminal', TerminalPage);
     Router.register('/tasks', TasksPage);
+    Router.register('/chat', ChatPage);
+    Router.register('/snippets', SnippetsPage);
     Router.register('/settings', SettingsPage);
     Router.register('/login', LoginPage);
 
