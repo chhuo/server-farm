@@ -8,6 +8,8 @@
 - 通过心跳转发任务到 Relay 节点（NAT 友好）
 """
 
+import json
+import os
 import time
 import uuid
 from typing import Any, Optional
@@ -255,7 +257,6 @@ class TaskService:
     def list_tasks(self, limit: int = 50) -> list[dict]:
         """列出最近的任务"""
         tasks_dir = self._storage.ensure_subdir("tasks")
-        import os
         files = sorted(
             [f for f in os.listdir(tasks_dir) if f.endswith(".json")],
             reverse=True,
@@ -265,7 +266,6 @@ class TaskService:
         for filename in files[:limit]:
             filepath = os.path.join(tasks_dir, filename)
             try:
-                import json
                 with open(filepath, "r", encoding="utf-8") as f:
                     result.append(json.load(f))
             except Exception:
@@ -280,19 +280,16 @@ class TaskService:
 
     def _save_task(self, task: dict):
         """保存任务到文件"""
-        import json
         tasks_dir = self._storage.ensure_subdir("tasks")
         filepath = os.path.join(tasks_dir, f"{task['task_id']}.json")
         try:
-            import os
             with open(filepath, "w", encoding="utf-8") as f:
                 json.dump(task, f, ensure_ascii=False, indent=2)
         except Exception as e:
             _logger.error(f"任务保存失败: {e}")
 
     def _load_task(self, task_id: str) -> Optional[dict]:
-        """加载任务从文件"""
-        import json, os
+        """从文件加载任务"""
         tasks_dir = self._storage.ensure_subdir("tasks")
         filepath = os.path.join(tasks_dir, f"{task_id}.json")
 

@@ -7,7 +7,6 @@ NodePanel — 分布式控制台面板入口
 
 import os
 import socket
-import sys
 from contextlib import asynccontextmanager
 
 import uvicorn
@@ -18,7 +17,6 @@ from fastapi.responses import FileResponse
 from core import bootstrap
 from core.logger import get_logger
 from core.node import NodeIdentity
-from api.deps import init_deps
 from api.v1.router import router as v1_router
 from services.storage import FileStore
 from services.peer_service import PeerService
@@ -32,7 +30,6 @@ def create_app() -> FastAPI:
 
     # ── Phase 1: 引导加载 ──
     config, logger = bootstrap.init()
-    init_deps(config, logger)
     app_logger = get_logger("main")
 
     # ── Phase 2: 存储 + 节点身份 ──
@@ -161,8 +158,10 @@ def create_app() -> FastAPI:
 
         @app.get("/{path:path}")
         async def serve_spa(path: str):
+            # API 和静态资源路径由各自的路由/mount 处理，此处不拦截
             if path.startswith(("api/", "css/", "js/")):
-                return None
+                from fastapi.responses import Response
+                return Response(status_code=404)
             return FileResponse(index_path)
 
     app_logger.info(

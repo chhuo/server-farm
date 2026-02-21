@@ -8,6 +8,7 @@ Peer 同步服务
 - 所有模式：定期更新自身状态（CPU/内存/last_seen）
 - 自动故障转移：Temp-Full 升降级
 - 跨节点同步：聊天记录 + 信息片段
+- 增量同步：仅传输上次同步后变更的数据
 """
 
 import asyncio
@@ -30,6 +31,7 @@ NODES_FILE = "nodes.json"
 STATES_FILE = "states.json"
 CHAT_FILE = "chat.json"
 SNIPPETS_FILE = "snippets.json"
+SYNC_META_FILE = "sync_meta.json"
 
 
 class PeerService:
@@ -41,6 +43,12 @@ class PeerService:
     - 内网 Full（not connectable）：自动发现可连接节点，主动双向同步
     - Relay 模式：自动发现可连接 Full 节点，运行心跳循环
     - 所有模式：运行自身状态更新循环
+
+    增量同步机制：
+    - 每个 peer 记录上次成功同步的时间戳 (sync_meta.json)
+    - 发送端只发送 last_sync_time 之后变更的数据
+    - 接收端也可按请求中的 since 参数过滤返回数据
+    - last_sync_time=0 时为全量同步（首次连接）
     """
 
     def __init__(self, node_identity, storage, config, task_service=None):
@@ -61,12 +69,64 @@ class PeerService:
         self._running = False
 
     # ──────────────────────────────────────────
+    # 增量同步：per-peer 时间戳管理
+    # ──────────────────────────────────────────
+
+    def _get_peer_sync_time(self, peer_id: str) -> float:
+        """获取上次与某个 peer 成功同步的时间戳"""
+        meta = self._storage.read(SYNC_META_FILE, {})
+        return meta.get(peer_id, {}).get("last_sync_time", 0)
+
+    def _set_peer_sync_time(self, peer_id: str, ts: float):
+        """记录与某个 peer 成功同步的时间戳"""
+        def updater(meta):
+            if peer_id not in meta:
+                meta[peer_id] = {}
+            meta[peer_id]["last_sync_time"] = ts
+            return meta
+        self._storage.update(SYNC_META_FILE, updater, default={})
+
+    def _filter_nodes_since(self, nodes: dict, since: float) -> dict:
+        """过滤出 since 之后有变更的节点"""
+        if since <= 0:
+            return nodes
+        return {
+            nid: info for nid, info in nodes.items()
+            if info.get("registered_at", 0) > since
+        }
+
+    def _filter_states_since(self, states: dict, since: float) -> dict:
+        """过滤出 since 之后有变更的状态"""
+        if since <= 0:
+            return states
+        return {
+            nid: state for nid, state in states.items()
+            if state.get("last_seen", 0) > since
+        }
+
+    def _filter_chat_since(self, chat: list, since: float) -> list:
+        """过滤出 since 之后的聊天消息"""
+        if since <= 0:
+            return chat
+        return [msg for msg in chat if msg.get("timestamp", 0) > since]
+
+    def _filter_snippets_since(self, snippets: list, since: float) -> list:
+        """过滤出 since 之后有变更的片段"""
+        if since <= 0:
+            return snippets
+        return [s for s in snippets if s.get("updated_at", 0) > since]
+
+    # ──────────────────────────────────────────
     # 生命周期
     # ──────────────────────────────────────────
 
     async def start(self):
         """启动后台同步循环"""
         self._running = True
+
+        # 确保 sync_meta.json 存在
+        if not self._storage.exists(SYNC_META_FILE):
+            self._storage.write(SYNC_META_FILE, {})
 
         # 所有模式：启动自身状态更新循环
         self._state_task = asyncio.create_task(self._self_state_loop())
@@ -100,6 +160,76 @@ class PeerService:
         self._sync_task = None
         self._state_task = None
         _logger.info("同步服务已停止")
+
+    async def trigger_sync_now(self) -> dict:
+        """
+        手动触发一次立即同步/心跳。
+        
+        根据当前节点模式执行相应的同步操作：
+        - Hub Full：向所有可连接节点执行一轮 Gossip 同步
+        - 内网 Full：向所有可连接节点执行一次双向同步
+        - Relay：向可连接 Full 节点发送一次心跳
+        
+        返回同步结果摘要。
+        """
+        timeout = self._config.get("peer.timeout", 10)
+        peers = self._discover_connectable_peers()
+
+        if not peers:
+            return {
+                "success": False,
+                "mode": self._node.mode.value,
+                "message": "未发现可连接的节点",
+                "synced_peers": 0,
+                "total_peers": 0,
+            }
+
+        synced = 0
+        failed = 0
+        sync_start = time.time()
+
+        if self._node.is_full:
+            # Full 模式（Hub 或内网）：与所有可连接节点同步
+            for peer in peers:
+                try:
+                    if self._node.connectable:
+                        await self._sync_with_peer(peer, timeout)
+                    else:
+                        result = await self._do_active_sync(peer, timeout)
+                        if not result:
+                            raise Exception("sync returned False")
+                    synced += 1
+                except Exception as e:
+                    _logger.debug(f"手动同步失败 [{peer.get('node_id', '?')}]: {e}")
+                    failed += 1
+        elif self._node.is_relay or self._node.is_temp_full:
+            # Relay / Temp-Full 模式：向可连接节点发心跳
+            for peer in peers:
+                success = await self._send_heartbeat(peer, timeout)
+                if success:
+                    synced += 1
+                    break  # 心跳只需成功一个
+                else:
+                    failed += 1
+
+        elapsed = round(time.time() - sync_start, 2)
+
+        # 同时更新自身状态
+        await self._update_self_state()
+
+        _logger.info(
+            f"手动同步完成: 成功 {synced}/{len(peers)}, 耗时 {elapsed}s"
+        )
+
+        return {
+            "success": synced > 0,
+            "mode": self._node.mode.value,
+            "synced_peers": synced,
+            "failed_peers": failed,
+            "total_peers": len(peers),
+            "elapsed": elapsed,
+            "message": f"同步完成: {synced} 个节点成功" if synced > 0 else "所有节点同步失败",
+        }
 
     async def restart_sync(self):
         """重启同步循环（配置变更后调用）"""
@@ -223,19 +353,29 @@ class PeerService:
         peer_id = peer.get("node_id", "unknown")
 
         try:
+            # 获取上次同步时间，实现增量
+            last_sync = self._get_peer_sync_time(peer_id)
+            sync_start = time.time()
+
             local_nodes = self._storage.read(NODES_FILE, {})
             local_states = self._storage.read(STATES_FILE, {})
             local_chat = self._storage.read(CHAT_FILE, [])
             local_snippets = self._storage.read(SNIPPETS_FILE, [])
 
+            # 增量过滤：只发送上次同步后变更的数据
+            delta_nodes = self._filter_nodes_since(local_nodes, last_sync)
+            delta_states = self._filter_states_since(local_states, last_sync)
+            delta_chat = self._filter_chat_since(local_chat, last_sync)
+            delta_snippets = self._filter_snippets_since(local_snippets, last_sync)
+
             payload = {
                 "node_id": self._node.node_id,
                 "node_key": self._node.node_key,
-                "last_seen_version": self._version,
-                "nodes": local_nodes,
-                "states": local_states,
-                "chat": local_chat,
-                "snippets": local_snippets,
+                "since": last_sync,
+                "nodes": delta_nodes,
+                "states": delta_states,
+                "chat": delta_chat,
+                "snippets": delta_snippets,
             }
 
             async with httpx.AsyncClient(timeout=timeout) as client:
@@ -243,7 +383,7 @@ class PeerService:
                 resp.raise_for_status()
                 data = resp.json()
 
-            # 合并对方数据
+            # 合并对方返回的增量数据
             remote_nodes = data.get("nodes", {})
             remote_states = data.get("states", {})
             remote_chat = data.get("chat", [])
@@ -263,7 +403,14 @@ class PeerService:
             if remote_version > self._version:
                 self._version = remote_version
 
-            _logger.debug(f"Gossip 同步完成: {peer_id} (v{remote_version})")
+            # 记录本次同步时间
+            self._set_peer_sync_time(peer_id, sync_start)
+
+            _logger.debug(
+                f"Gossip 增量同步完成: {peer_id} (v{remote_version}), "
+                f"发送 nodes={len(delta_nodes)} states={len(delta_states)} "
+                f"chat={len(delta_chat)} snippets={len(delta_snippets)}"
+            )
 
         except Exception as e:
             _logger.warning(f"Gossip 同步失败 [{peer_id}]: {e}")
@@ -278,7 +425,7 @@ class PeerService:
         内网 Full 节点主动同步循环。
 
         自动从本地节点表中发现可连接的 Hub 节点，
-        定期向它们发起双向数据同步。
+        定期向它们发起双向增量数据同步。
         """
         interval = self._config.get("peer.sync_interval", 30)
         max_failures = self._config.get("peer.max_heartbeat_failures", 3)
@@ -319,15 +466,25 @@ class PeerService:
                 await asyncio.sleep(interval)
 
     async def _do_active_sync(self, peer: dict, timeout: float) -> bool:
-        """向一个 Hub 节点执行一次双向数据同步"""
+        """向一个 Hub 节点执行一次双向增量数据同步"""
         peer_url = self._get_peer_url(peer)
         peer_id = peer.get("node_id", "unknown")
 
         try:
+            # 获取上次同步时间
+            last_sync = self._get_peer_sync_time(peer_id)
+            sync_start = time.time()
+
             local_nodes = self._storage.read(NODES_FILE, {})
             local_states = self._storage.read(STATES_FILE, {})
             local_chat = self._storage.read(CHAT_FILE, [])
             local_snippets = self._storage.read(SNIPPETS_FILE, [])
+
+            # 增量过滤
+            delta_nodes = self._filter_nodes_since(local_nodes, last_sync)
+            delta_states = self._filter_states_since(local_states, last_sync)
+            delta_chat = self._filter_chat_since(local_chat, last_sync)
+            delta_snippets = self._filter_snippets_since(local_snippets, last_sync)
 
             from services.collector import collect_system_info
             system_info = collect_system_info()
@@ -335,11 +492,11 @@ class PeerService:
             payload = {
                 "node_id": self._node.node_id,
                 "node_key": self._node.node_key,
-                "last_seen_version": self._version,
-                "nodes": local_nodes,
-                "states": local_states,
-                "chat": local_chat,
-                "snippets": local_snippets,
+                "since": last_sync,
+                "nodes": delta_nodes,
+                "states": delta_states,
+                "chat": delta_chat,
+                "snippets": delta_snippets,
                 "system_info": system_info,
             }
 
@@ -351,7 +508,7 @@ class PeerService:
                 resp.raise_for_status()
                 data = resp.json()
 
-            # 合并远端数据
+            # 合并远端增量数据
             remote_nodes = data.get("nodes", {})
             remote_states = data.get("states", {})
             remote_chat = data.get("chat", [])
@@ -371,7 +528,14 @@ class PeerService:
             if remote_version > self._version:
                 self._version = remote_version
 
-            _logger.debug(f"内网 Full 主动同步完成: {peer_id} (v{remote_version})")
+            # 记录本次同步时间
+            self._set_peer_sync_time(peer_id, sync_start)
+
+            _logger.debug(
+                f"内网 Full 增量同步完成: {peer_id} (v{remote_version}), "
+                f"发送 nodes={len(delta_nodes)} states={len(delta_states)} "
+                f"chat={len(delta_chat)} snippets={len(delta_snippets)}"
+            )
             return True
 
         except Exception as e:
@@ -424,13 +588,17 @@ class PeerService:
                 await asyncio.sleep(interval)
 
     async def _send_heartbeat(self, peer: dict, timeout: float) -> bool:
-        """发送心跳到指定 Hub 节点"""
+        """发送心跳到指定 Hub 节点（增量同步）"""
         from services.collector import collect_system_info
 
         peer_url = self._get_peer_url(peer)
         peer_id = peer.get("node_id", "unknown")
 
         try:
+            # 增量：获取上次同步时间
+            last_sync = self._get_peer_sync_time(peer_id)
+            sync_start = time.time()
+
             system_info = collect_system_info()
             task_results = self._collect_completed_task_results()
 
@@ -438,6 +606,7 @@ class PeerService:
                 "node_id": self._node.node_id,
                 "node_key": self._node.node_key,
                 "mode": self._node.mode.value,
+                "since": last_sync,
                 "system_info": system_info,
                 "task_results": task_results,
             }
@@ -450,13 +619,17 @@ class PeerService:
                 resp.raise_for_status()
                 data = resp.json()
 
-            # 处理响应
+            # 处理响应：合并增量数据
             if data.get("nodes"):
-                self._storage.write(NODES_FILE, data["nodes"])
+                local_nodes = self._storage.read(NODES_FILE, {})
+                merged_nodes = self._merge_nodes(local_nodes, data["nodes"])
+                self._storage.write(NODES_FILE, merged_nodes)
             if data.get("states"):
-                self._storage.write(STATES_FILE, data["states"])
+                local_states = self._storage.read(STATES_FILE, {})
+                merged_states = self._merge_states(local_states, data["states"])
+                self._storage.write(STATES_FILE, merged_states)
 
-            # 同步聊天和片段数据
+            # 同步聊天和片段数据（增量合并）
             if data.get("chat"):
                 local_chat = self._storage.read(CHAT_FILE, [])
                 merged_chat = self._merge_chat(local_chat, data["chat"])
@@ -473,7 +646,10 @@ class PeerService:
                     _logger.info(f"收到 Hub 下发的任务: {task_data.get('task_id')}")
                     asyncio.create_task(self._execute_relay_task(task_data))
 
-            _logger.debug(f"心跳成功: {peer_id}")
+            # 记录本次同步时间
+            self._set_peer_sync_time(peer_id, sync_start)
+
+            _logger.debug(f"心跳成功: {peer_id} (增量 since={last_sync:.0f})")
             return data.get("accepted", True)
 
         except Exception as e:
@@ -598,7 +774,12 @@ class PeerService:
         return merged
 
     def _merge_snippets(self, local: list, remote: list) -> list:
-        """合并信息片段（按 id 去重，以 updated_at 最新的为准）"""
+        """
+        合并信息片段（按 id 去重，以 updated_at 最新的为准）。
+
+        注意：保留 _deleted 标记的记录参与合并，防止已删除的片段
+        因另一端尚未同步删除操作而"复活"。只在最终读取时过滤。
+        """
         snippets_map = {}
 
         for snippet in local:
@@ -613,12 +794,12 @@ class PeerService:
             if sid not in snippets_map:
                 snippets_map[sid] = snippet
             else:
-                # 保留最新版本
+                # 保留最新版本（包括 _deleted 标记）
                 if snippet.get("updated_at", 0) > snippets_map[sid].get("updated_at", 0):
                     snippets_map[sid] = snippet
 
-        # 过滤已删除的
-        result = [s for s in snippets_map.values() if not s.get("_deleted", False)]
+        # 保留所有记录（含 _deleted），由读取端过滤
+        result = list(snippets_map.values())
         result.sort(key=lambda s: s.get("created_at", 0))
         return result
 
@@ -659,8 +840,11 @@ class PeerService:
         """
         处理来自其他节点的同步请求（Gossip 或内网 Full 主动同步）。
 
-        返回合并后的全量数据。
+        支持增量同步：
+        - 请求中带 since 参数时，只返回该时间之后变更的数据
+        - since=0 或不存在时，返回全量数据（兼容旧版本）
         """
+        since = request_data.get("since", 0)
         remote_nodes = request_data.get("nodes", {})
         remote_states = request_data.get("states", {})
         remote_chat = request_data.get("chat", [])
@@ -671,6 +855,7 @@ class PeerService:
         local_chat = self._storage.read(CHAT_FILE, [])
         local_snippets = self._storage.read(SNIPPETS_FILE, [])
 
+        # 合并远端增量数据到本地
         merged_nodes = self._merge_nodes(local_nodes, remote_nodes)
         merged_states = self._merge_states(local_states, remote_states)
         merged_chat = self._merge_chat(local_chat, remote_chat)
@@ -681,19 +866,30 @@ class PeerService:
         self._storage.write(CHAT_FILE, merged_chat)
         self._storage.write(SNIPPETS_FILE, merged_snippets)
 
+        # 返回增量数据给请求方
+        resp_nodes = self._filter_nodes_since(merged_nodes, since)
+        resp_states = self._filter_states_since(merged_states, since)
+        resp_chat = self._filter_chat_since(merged_chat, since)
+        resp_snippets = self._filter_snippets_since(merged_snippets, since)
+
         return {
             "node_id": self._node.node_id,
             "current_version": self._version,
-            "nodes": merged_nodes,
-            "states": merged_states,
-            "chat": merged_chat,
-            "snippets": merged_snippets,
+            "nodes": resp_nodes,
+            "states": resp_states,
+            "chat": resp_chat,
+            "snippets": resp_snippets,
         }
 
     def handle_heartbeat(self, request_data: dict) -> dict:
-        """处理来自 Relay 节点的心跳请求"""
+        """
+        处理来自 Relay 节点的心跳请求。
+        
+        支持增量：根据 since 参数只返回变更的数据。
+        """
         relay_id = request_data.get("node_id", "")
         system_info = request_data.get("system_info", {})
+        since = request_data.get("since", 0)
 
         # 更新 Relay 状态
         state = {
@@ -725,6 +921,14 @@ class PeerService:
 
         all_nodes = self._storage.read(NODES_FILE, {})
         all_states = self._storage.read(STATES_FILE, {})
+        all_chat = self._storage.read(CHAT_FILE, [])
+        all_snippets = self._storage.read(SNIPPETS_FILE, [])
+
+        # 增量过滤返回数据
+        resp_nodes = self._filter_nodes_since(all_nodes, since)
+        resp_states = self._filter_states_since(all_states, since)
+        resp_chat = self._filter_chat_since(all_chat, since)
+        resp_snippets = self._filter_snippets_since(all_snippets, since)
 
         # 获取待分发给该 Relay 的任务
         pending_tasks = []
@@ -738,10 +942,10 @@ class PeerService:
 
         return {
             "accepted": True,
-            "nodes": all_nodes,
-            "states": all_states,
-            "chat": self._storage.read(CHAT_FILE, []),
-            "snippets": self._storage.read(SNIPPETS_FILE, []),
+            "nodes": resp_nodes,
+            "states": resp_states,
+            "chat": resp_chat,
+            "snippets": resp_snippets,
             "current_version": self._version,
             "tasks": pending_tasks,
         }

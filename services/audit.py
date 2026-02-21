@@ -7,9 +7,10 @@
 - 在哪个节点执行
 - 执行了什么命令
 - 结果如何
+
+使用 FileStore 进行原子写入，确保线程安全和数据完整性。
 """
 
-import json
 import os
 import time
 from datetime import datetime
@@ -29,7 +30,13 @@ class AuditService:
             storage: FileStore 实例
         """
         self._storage = storage
-        self._audit_dir = storage.ensure_subdir("audit")
+        self._storage.ensure_subdir("audit")
+
+    def _audit_filename(self, date_str: str = None) -> str:
+        """生成审计日志文件的相对路径（相对于 data 目录）"""
+        if not date_str:
+            date_str = datetime.now().strftime("%Y-%m-%d")
+        return os.path.join("audit", f"audit_{date_str}.json")
 
     def log(
         self,
@@ -62,23 +69,16 @@ class AuditService:
             "details": details or {},
         }
 
-        # 写入按日期分割的审计文件
-        date_str = datetime.now().strftime("%Y-%m-%d")
-        filename = f"audit_{date_str}.json"
-        filepath = os.path.join(self._audit_dir, filename)
+        filename = self._audit_filename()
 
         try:
-            # 读取当天的审计日志
-            entries = []
-            if os.path.isfile(filepath):
-                with open(filepath, "r", encoding="utf-8") as f:
-                    entries = json.load(f)
+            def updater(entries):
+                if not isinstance(entries, list):
+                    entries = []
+                entries.append(entry)
+                return entries
 
-            entries.append(entry)
-
-            # 写回
-            with open(filepath, "w", encoding="utf-8") as f:
-                json.dump(entries, f, ensure_ascii=False, indent=2)
+            self._storage.update(filename, updater, default=[])
 
             _logger.debug(
                 f"审计日志: [{action}] user={user} node={target_node} "
@@ -102,15 +102,15 @@ class AuditService:
         if not date:
             date = datetime.now().strftime("%Y-%m-%d")
 
-        filename = f"audit_{date}.json"
-        filepath = os.path.join(self._audit_dir, filename)
+        filename = self._audit_filename(date)
 
-        if not os.path.isfile(filepath):
+        if not self._storage.exists(filename):
             return []
 
         try:
-            with open(filepath, "r", encoding="utf-8") as f:
-                entries = json.load(f)
+            entries = self._storage.read(filename, [])
+            if not isinstance(entries, list):
+                return []
             # 最新在前
             entries.reverse()
             return entries[:limit]
@@ -123,20 +123,24 @@ class AuditService:
         查询最近的审计日志（跨天）。
         """
         all_entries = []
+        audit_dir = os.path.join(self._storage._data_dir, "audit")
 
         try:
+            if not os.path.isdir(audit_dir):
+                return []
+
             # 按文件名倒序列出审计文件
             files = sorted(
-                [f for f in os.listdir(self._audit_dir) if f.startswith("audit_")],
+                [f for f in os.listdir(audit_dir) if f.startswith("audit_") and f.endswith(".json")],
                 reverse=True,
             )
 
-            for filename in files:
-                filepath = os.path.join(self._audit_dir, filename)
+            for file in files:
+                filename = os.path.join("audit", file)
                 try:
-                    with open(filepath, "r", encoding="utf-8") as f:
-                        entries = json.load(f)
-                    all_entries.extend(entries)
+                    entries = self._storage.read(filename, [])
+                    if isinstance(entries, list):
+                        all_entries.extend(entries)
                     if len(all_entries) >= limit:
                         break
                 except Exception:

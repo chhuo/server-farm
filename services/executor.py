@@ -8,7 +8,6 @@
 """
 
 import asyncio
-import subprocess
 import platform
 from typing import Optional
 
@@ -61,20 +60,12 @@ class CommandExecutor:
         _logger.info(f"执行命令: {command}")
 
         try:
-            if self._is_windows:
-                process = await asyncio.create_subprocess_shell(
-                    command,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                    cwd=cwd,
-                )
-            else:
-                process = await asyncio.create_subprocess_shell(
-                    command,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                    cwd=cwd,
-                )
+            process = await asyncio.create_subprocess_shell(
+                command,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                cwd=cwd,
+            )
 
             try:
                 stdout, stderr = await asyncio.wait_for(

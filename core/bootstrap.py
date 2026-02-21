@@ -48,8 +48,6 @@ def init(config_path: Optional[str] = None) -> tuple["ConfigManager", logging.Lo
     logger.info(f"文件日志: {'启用' if logging_config.get('file', {}).get('enabled', True) else '禁用'}")
     logger.info("=" * 60)
 
-    # ── Phase 4: 冻结配置 ──
-    config.freeze()
-    logger.info("配置已冻结，系统初始化完成")
+    logger.info("系统初始化完成")
 
     return config, logger
