@@ -823,6 +823,22 @@
     background: var(--bg-card-hover);
 }
 
+.btn-small {
+    padding: 4px 10px;
+    font-size: 12px;
+    border-radius: 4px;
+}
+
+.btn-success {
+    color: var(--accent-green);
+    border: 1px solid var(--accent-green);
+    background: transparent;
+}
+
+.btn-success:hover {
+    background: rgba(34, 197, 94, 0.1);
+}
+
 .btn-danger {
     color: var(--accent-red);
     border-color: rgba(239, 68, 68, 0.3);

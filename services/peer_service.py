@@ -9,9 +9,12 @@ Peer 同步服务
 - 自动故障转移：Temp-Full 升降级
 - 跨节点同步：聊天记录 + 信息片段
 - 增量同步：仅传输上次同步后变更的数据
+- 信任管理：仅与 trusted 节点通信，签名认证
+- 加入轮询：等待审批时定期轮询状态
 """
 
 import asyncio
+import json
 import math
 import random
 import time
@@ -20,7 +23,7 @@ from typing import Any, Optional
 import httpx
 
 from core.logger import get_logger
-from models.node import NodeMode
+from models.node import NodeMode, TrustStatus
 
 _logger = get_logger("services.peer")
 
@@ -44,11 +47,10 @@ class PeerService:
     - Relay 模式：自动发现可连接 Full 节点，运行心跳循环
     - 所有模式：运行自身状态更新循环
 
-    增量同步机制：
-    - 每个 peer 记录上次成功同步的时间戳 (sync_meta.json)
-    - 发送端只发送 last_sync_time 之后变更的数据
-    - 接收端也可按请求中的 since 参数过滤返回数据
-    - last_sync_time=0 时为全量同步（首次连接）
+    安全模型：
+    - 仅与 trust_status=trusted 的节点通信
+    - 请求使用 secp256k1 签名，接收方验签
+    - kicked 状态通过同步传播到整个网络
     """
 
     def __init__(self, node_identity, storage, config, task_service=None):
@@ -66,7 +68,13 @@ class PeerService:
         # 后台任务引用
         self._sync_task: Optional[asyncio.Task] = None
         self._state_task: Optional[asyncio.Task] = None
+        self._join_poll_task: Optional[asyncio.Task] = None
         self._running = False
+
+        # 加入网络状态
+        self._join_target_id: str = ""
+        self._join_target_url: str = ""
+        self._join_status: str = ""  # "", "polling", "trusted", "kicked", "failed"
 
     # ──────────────────────────────────────────
     # 增量同步：per-peer 时间戳管理
@@ -117,6 +125,23 @@ class PeerService:
         return [s for s in snippets if s.get("updated_at", 0) > since]
 
     # ──────────────────────────────────────────
+    # 签名辅助
+    # ──────────────────────────────────────────
+
+    def _make_signed_request_args(self, payload: dict) -> tuple[bytes, dict]:
+        """
+        构造带签名的请求参数。
+
+        Returns:
+            (body_bytes, headers_dict)
+        """
+        body = json.dumps(payload).encode()
+        sig_headers = self._node.sign_request(body)
+        headers = {"Content-Type": "application/json"}
+        headers.update(sig_headers)
+        return body, headers
+
+    # ──────────────────────────────────────────
     # 生命周期
     # ──────────────────────────────────────────
 
@@ -132,25 +157,25 @@ class PeerService:
         self._state_task = asyncio.create_task(self._self_state_loop())
         _logger.info("已启动自身状态更新循环")
 
+        # 检查是否有 waiting_approval 的节点需要轮询
+        self._check_pending_joins()
+
         if self._node.is_full and self._node.connectable:
-            # Hub Full：Gossip 同步（仅与其他可直连 Full 节点）
             _logger.info("启动 Hub Full 模式 Gossip 同步循环")
             self._sync_task = asyncio.create_task(self._gossip_loop())
 
         elif self._node.is_full and not self._node.connectable:
-            # 内网 Full：自动发现可连接节点，主动双向同步
             _logger.info("启动内网 Full 模式主动同步循环（自动发现可连接节点）")
             self._sync_task = asyncio.create_task(self._active_sync_loop())
 
         elif self._node.is_relay:
-            # Relay：自动发现可连接 Full 节点心跳
             _logger.info("启动 Relay 模式心跳循环（自动发现可连接节点）")
             self._sync_task = asyncio.create_task(self._heartbeat_loop())
 
     async def stop(self):
         """停止后台同步"""
         self._running = False
-        for task in [self._sync_task, self._state_task]:
+        for task in [self._sync_task, self._state_task, self._join_poll_task]:
             if task:
                 task.cancel()
                 try:
@@ -159,27 +184,29 @@ class PeerService:
                     pass
         self._sync_task = None
         self._state_task = None
+        self._join_poll_task = None
         _logger.info("同步服务已停止")
 
+    def _check_pending_joins(self):
+        """启动时检查是否有待审批的加入申请需要恢复轮询"""
+        nodes = self._storage.read(NODES_FILE, {})
+        for nid, info in nodes.items():
+            if info.get("trust_status") == TrustStatus.WAITING_APPROVAL.value:
+                url = info.get("public_url") or f"http://{info.get('host', '')}:{info.get('port', 8300)}"
+                _logger.info(f"恢复加入轮询: {nid} → {url}")
+                self.start_join_polling(nid, url)
+                break  # 一次只轮询一个
+
     async def trigger_sync_now(self) -> dict:
-        """
-        手动触发一次立即同步/心跳。
-        
-        根据当前节点模式执行相应的同步操作：
-        - Hub Full：向所有可连接节点执行一轮 Gossip 同步
-        - 内网 Full：向所有可连接节点执行一次双向同步
-        - Relay：向可连接 Full 节点发送一次心跳
-        
-        返回同步结果摘要。
-        """
+        """手动触发一次立即同步/心跳"""
         timeout = self._config.get("peer.timeout", 10)
-        peers = self._discover_connectable_peers()
+        peers = self._discover_trusted_connectable_peers()
 
         if not peers:
             return {
                 "success": False,
                 "mode": self._node.mode.value,
-                "message": "未发现可连接的节点",
+                "message": "未发现可连接的信任节点",
                 "synced_peers": 0,
                 "total_peers": 0,
             }
@@ -189,7 +216,6 @@ class PeerService:
         sync_start = time.time()
 
         if self._node.is_full:
-            # Full 模式（Hub 或内网）：与所有可连接节点同步
             for peer in peers:
                 try:
                     if self._node.connectable:
@@ -203,23 +229,16 @@ class PeerService:
                     _logger.debug(f"手动同步失败 [{peer.get('node_id', '?')}]: {e}")
                     failed += 1
         elif self._node.is_relay or self._node.is_temp_full:
-            # Relay / Temp-Full 模式：向可连接节点发心跳
             for peer in peers:
                 success = await self._send_heartbeat(peer, timeout)
                 if success:
                     synced += 1
-                    break  # 心跳只需成功一个
+                    break
                 else:
                     failed += 1
 
         elapsed = round(time.time() - sync_start, 2)
-
-        # 同时更新自身状态
         await self._update_self_state()
-
-        _logger.info(
-            f"手动同步完成: 成功 {synced}/{len(peers)}, 耗时 {elapsed}s"
-        )
 
         return {
             "success": synced > 0,
@@ -234,7 +253,6 @@ class PeerService:
     async def restart_sync(self):
         """重启同步循环（配置变更后调用）"""
         _logger.info("正在重启同步循环...")
-        # 停止旧的同步任务（不停 state_task）
         if self._sync_task:
             self._sync_task.cancel()
             try:
@@ -245,27 +263,115 @@ class PeerService:
 
         self._heartbeat_failures = 0
 
-        # 根据新配置重新启动
         if self._node.is_full and self._node.connectable:
-            _logger.info("重启为 Hub Full 模式 Gossip 同步")
             self._sync_task = asyncio.create_task(self._gossip_loop())
         elif self._node.is_full and not self._node.connectable:
-            _logger.info("重启为内网 Full 模式主动同步")
             self._sync_task = asyncio.create_task(self._active_sync_loop())
         elif self._node.is_relay:
-            _logger.info("重启为 Relay 模式心跳")
             self._sync_task = asyncio.create_task(self._heartbeat_loop())
+
+    # ──────────────────────────────────────────
+    # 加入网络轮询
+    # ──────────────────────────────────────────
+
+    def start_join_polling(self, target_id: str, target_url: str):
+        """启动加入审批轮询"""
+        self._join_target_id = target_id
+        self._join_target_url = target_url
+        self._join_status = "polling"
+
+        if self._join_poll_task:
+            self._join_poll_task.cancel()
+
+        self._join_poll_task = asyncio.create_task(self._join_poll_loop())
+        _logger.info(f"已启动加入审批轮询: {target_id} → {target_url}")
+
+    def get_join_status(self) -> dict:
+        """获取当前加入网络的状态"""
+        if not self._join_target_id:
+            return {"status": "none", "message": "未发起加入申请"}
+
+        return {
+            "status": self._join_status,
+            "target_id": self._join_target_id,
+            "target_url": self._join_target_url,
+            "message": {
+                "polling": "等待管理员审批...",
+                "trusted": "已成功加入网络",
+                "kicked": "已被踢出网络",
+                "failed": "加入失败",
+                "": "未知状态",
+            }.get(self._join_status, ""),
+        }
+
+    async def _join_poll_loop(self):
+        """轮询目标节点查询加入审批状态"""
+        interval = self._config.get("peer.heartbeat_interval", 10)
+
+        while self._running and self._join_status == "polling":
+            try:
+                await asyncio.sleep(interval)
+
+                async with httpx.AsyncClient(timeout=10) as client:
+                    resp = await client.get(
+                        f"{self._join_target_url}/api/v1/peer/join-status",
+                        params={
+                            "node_id": self._node.node_id,
+                            "public_key": self._node.public_key_hex,
+                        },
+                    )
+                    resp.raise_for_status()
+                    data = resp.json()
+
+                status = data.get("status", "")
+
+                if status == "trusted":
+                    _logger.info("🎉 加入申请已被批准！")
+                    self._join_status = "trusted"
+
+                    # 合并网络节点信息
+                    network_nodes = data.get("nodes", {})
+                    if network_nodes:
+                        local_nodes = self._storage.read(NODES_FILE, {})
+                        for nid, ninfo in network_nodes.items():
+                            if nid != self._node.node_id:
+                                # 保留远端信任状态
+                                if nid not in local_nodes or local_nodes[nid].get("trust_status") == TrustStatus.WAITING_APPROVAL.value:
+                                    local_nodes[nid] = ninfo
+                                    local_nodes[nid]["trust_status"] = TrustStatus.TRUSTED.value
+                        self._storage.write(NODES_FILE, local_nodes)
+
+                    # 更新目标节点状态为 trusted
+                    def updater(nodes):
+                        if self._join_target_id in nodes:
+                            nodes[self._join_target_id]["trust_status"] = TrustStatus.TRUSTED.value
+                        return nodes
+                    self._storage.update(NODES_FILE, updater, default={})
+
+                    # 立即触发一次同步
+                    await self.trigger_sync_now()
+                    break
+
+                elif status == "kicked":
+                    _logger.warning("加入申请被拒绝：节点已被踢出")
+                    self._join_status = "kicked"
+                    break
+
+                else:
+                    _logger.debug(f"加入状态: {status}, 继续轮询...")
+
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                _logger.debug(f"加入轮询异常: {e}")
+                await asyncio.sleep(interval)
 
     # ──────────────────────────────────────────
     # 所有模式：自身状态更新循环
     # ──────────────────────────────────────────
 
     async def _self_state_loop(self):
-        """
-        定期更新自身状态到状态表。
-        
-        所有模式下都运行，确保本机的 CPU/内存/last_seen 始终是最新的。
-        """
+        """定期更新自身状态到状态表"""
         interval = self._config.get("peer.heartbeat_interval", 10)
 
         while self._running:
@@ -279,14 +385,14 @@ class PeerService:
                 await asyncio.sleep(interval)
 
     # ──────────────────────────────────────────
-    # 自动发现可连接节点
+    # 自动发现可连接的信任节点
     # ──────────────────────────────────────────
 
-    def _discover_connectable_peers(self) -> list[dict]:
+    def _discover_trusted_connectable_peers(self) -> list[dict]:
         """
-        从本地节点表中自动发现所有可连接的 Full/Temp-Full 节点。
+        从本地节点表中发现所有可连接且受信任的 Full/Temp-Full 节点。
         
-        排除自身，返回有 public_url 或可访问地址的节点列表。
+        排除自身，排除非 trusted 节点。
         """
         nodes = self._storage.read(NODES_FILE, {})
         peers = []
@@ -297,7 +403,9 @@ class PeerService:
                 continue
             if not n.get("connectable", False):
                 continue
-            # 必须有可访问的地址
+            # 只与 trusted 节点通信
+            if n.get("trust_status") != TrustStatus.TRUSTED.value:
+                continue
             url = n.get("public_url") or (
                 f"http://{n['host']}:{n['port']}" if n.get("host") else ""
             )
@@ -314,18 +422,14 @@ class PeerService:
     # ──────────────────────────────────────────
 
     async def _gossip_loop(self):
-        """
-        Gossip 同步主循环（仅 Hub Full 节点运行）。
-
-        每轮从已知可直连 Full 节点中随机选取 max_fanout 个 Peer 进行增量同步。
-        """
+        """Gossip 同步主循环（仅 Hub Full 节点运行）"""
         base_interval = self._config.get("peer.sync_interval", 30)
         max_fanout = self._config.get("peer.max_fanout", 3)
         timeout = self._config.get("peer.timeout", 10)
 
         while self._running:
             try:
-                peers = self._discover_connectable_peers()
+                peers = self._discover_trusted_connectable_peers()
                 full_count = len(peers)
                 interval = base_interval + math.log2(max(full_count, 1)) * 5
 
@@ -334,7 +438,7 @@ class PeerService:
                     selected = random.sample(peers, k)
                     _logger.debug(
                         f"Gossip 同步轮次: {len(selected)} 个 Peer, "
-                        f"间隔 {interval:.0f}s, 可直连 Full 节点 {full_count}"
+                        f"间隔 {interval:.0f}s, 可直连信任节点 {full_count}"
                     )
                     tasks = [self._sync_with_peer(peer, timeout) for peer in selected]
                     await asyncio.gather(*tasks, return_exceptions=True)
@@ -348,12 +452,11 @@ class PeerService:
                 await asyncio.sleep(10)
 
     async def _sync_with_peer(self, peer: dict, timeout: float):
-        """与单个 Full Peer 执行增量同步（含聊天和片段）"""
+        """与单个 Full Peer 执行增量同步（带签名）"""
         peer_url = self._get_peer_url(peer)
         peer_id = peer.get("node_id", "unknown")
 
         try:
-            # 获取上次同步时间，实现增量
             last_sync = self._get_peer_sync_time(peer_id)
             sync_start = time.time()
 
@@ -362,7 +465,7 @@ class PeerService:
             local_chat = self._storage.read(CHAT_FILE, [])
             local_snippets = self._storage.read(SNIPPETS_FILE, [])
 
-            # 增量过滤：只发送上次同步后变更的数据
+            # 增量过滤
             delta_nodes = self._filter_nodes_since(local_nodes, last_sync)
             delta_states = self._filter_states_since(local_states, last_sync)
             delta_chat = self._filter_chat_since(local_chat, last_sync)
@@ -370,7 +473,6 @@ class PeerService:
 
             payload = {
                 "node_id": self._node.node_id,
-                "node_key": self._node.node_key,
                 "since": last_sync,
                 "nodes": delta_nodes,
                 "states": delta_states,
@@ -378,8 +480,14 @@ class PeerService:
                 "snippets": delta_snippets,
             }
 
+            body, headers = self._make_signed_request_args(payload)
+
             async with httpx.AsyncClient(timeout=timeout) as client:
-                resp = await client.post(f"{peer_url}/api/v1/peer/sync", json=payload)
+                resp = await client.post(
+                    f"{peer_url}/api/v1/peer/sync",
+                    content=body,
+                    headers=headers,
+                )
                 resp.raise_for_status()
                 data = resp.json()
 
@@ -403,7 +511,6 @@ class PeerService:
             if remote_version > self._version:
                 self._version = remote_version
 
-            # 记录本次同步时间
             self._set_peer_sync_time(peer_id, sync_start)
 
             _logger.debug(
@@ -421,26 +528,20 @@ class PeerService:
     # ──────────────────────────────────────────
 
     async def _active_sync_loop(self):
-        """
-        内网 Full 节点主动同步循环。
-
-        自动从本地节点表中发现可连接的 Hub 节点，
-        定期向它们发起双向增量数据同步。
-        """
+        """内网 Full 节点主动同步循环"""
         interval = self._config.get("peer.sync_interval", 30)
         max_failures = self._config.get("peer.max_heartbeat_failures", 3)
         timeout = self._config.get("peer.timeout", 10)
 
         while self._running:
             try:
-                peers = self._discover_connectable_peers()
+                peers = self._discover_trusted_connectable_peers()
 
                 if not peers:
-                    _logger.debug("未发现可连接的 Full 节点，等待节点加入...")
+                    _logger.debug("未发现可连接的信任节点，等待节点加入...")
                     await asyncio.sleep(interval)
                     continue
 
-                # 尝试与所有可连接节点同步
                 any_success = False
                 for peer in peers:
                     success = await self._do_active_sync(peer, timeout)
@@ -466,12 +567,11 @@ class PeerService:
                 await asyncio.sleep(interval)
 
     async def _do_active_sync(self, peer: dict, timeout: float) -> bool:
-        """向一个 Hub 节点执行一次双向增量数据同步"""
+        """向一个 Hub 节点执行一次双向增量数据同步（带签名）"""
         peer_url = self._get_peer_url(peer)
         peer_id = peer.get("node_id", "unknown")
 
         try:
-            # 获取上次同步时间
             last_sync = self._get_peer_sync_time(peer_id)
             sync_start = time.time()
 
@@ -480,7 +580,6 @@ class PeerService:
             local_chat = self._storage.read(CHAT_FILE, [])
             local_snippets = self._storage.read(SNIPPETS_FILE, [])
 
-            # 增量过滤
             delta_nodes = self._filter_nodes_since(local_nodes, last_sync)
             delta_states = self._filter_states_since(local_states, last_sync)
             delta_chat = self._filter_chat_since(local_chat, last_sync)
@@ -491,7 +590,6 @@ class PeerService:
 
             payload = {
                 "node_id": self._node.node_id,
-                "node_key": self._node.node_key,
                 "since": last_sync,
                 "nodes": delta_nodes,
                 "states": delta_states,
@@ -500,15 +598,17 @@ class PeerService:
                 "system_info": system_info,
             }
 
+            body, headers = self._make_signed_request_args(payload)
+
             async with httpx.AsyncClient(timeout=timeout) as client:
                 resp = await client.post(
                     f"{peer_url}/api/v1/peer/sync",
-                    json=payload,
+                    content=body,
+                    headers=headers,
                 )
                 resp.raise_for_status()
                 data = resp.json()
 
-            # 合并远端增量数据
             remote_nodes = data.get("nodes", {})
             remote_states = data.get("states", {})
             remote_chat = data.get("chat", [])
@@ -528,13 +628,10 @@ class PeerService:
             if remote_version > self._version:
                 self._version = remote_version
 
-            # 记录本次同步时间
             self._set_peer_sync_time(peer_id, sync_start)
 
             _logger.debug(
-                f"内网 Full 增量同步完成: {peer_id} (v{remote_version}), "
-                f"发送 nodes={len(delta_nodes)} states={len(delta_states)} "
-                f"chat={len(delta_chat)} snippets={len(delta_snippets)}"
+                f"内网 Full 增量同步完成: {peer_id} (v{remote_version})"
             )
             return True
 
@@ -547,27 +644,26 @@ class PeerService:
     # ──────────────────────────────────────────
 
     async def _heartbeat_loop(self):
-        """Relay 心跳主循环：自动发现可连接 Full 节点"""
+        """Relay 心跳主循环：自动发现可连接信任节点"""
         interval = self._config.get("peer.heartbeat_interval", 10)
         max_failures = self._config.get("peer.max_heartbeat_failures", 3)
         timeout = self._config.get("peer.timeout", 10)
 
         while self._running:
             try:
-                peers = self._discover_connectable_peers()
+                peers = self._discover_trusted_connectable_peers()
 
                 if not peers:
-                    _logger.debug("未发现可连接的 Full 节点，等待节点加入...")
+                    _logger.debug("未发现可连接的信任节点，等待节点加入...")
                     await asyncio.sleep(interval)
                     continue
 
-                # 向第一个可用的 Hub 节点发心跳
                 any_success = False
                 for peer in peers:
                     success = await self._send_heartbeat(peer, timeout)
                     if success:
                         any_success = True
-                        break  # 心跳只需要成功一个
+                        break
 
                 if any_success:
                     self._heartbeat_failures = 0
@@ -588,14 +684,13 @@ class PeerService:
                 await asyncio.sleep(interval)
 
     async def _send_heartbeat(self, peer: dict, timeout: float) -> bool:
-        """发送心跳到指定 Hub 节点（增量同步）"""
+        """发送心跳到指定 Hub 节点（带签名）"""
         from services.collector import collect_system_info
 
         peer_url = self._get_peer_url(peer)
         peer_id = peer.get("node_id", "unknown")
 
         try:
-            # 增量：获取上次同步时间
             last_sync = self._get_peer_sync_time(peer_id)
             sync_start = time.time()
 
@@ -604,17 +699,19 @@ class PeerService:
 
             payload = {
                 "node_id": self._node.node_id,
-                "node_key": self._node.node_key,
                 "mode": self._node.mode.value,
                 "since": last_sync,
                 "system_info": system_info,
                 "task_results": task_results,
             }
 
+            body, headers = self._make_signed_request_args(payload)
+
             async with httpx.AsyncClient(timeout=timeout) as client:
                 resp = await client.post(
                     f"{peer_url}/api/v1/peer/heartbeat",
-                    json=payload,
+                    content=body,
+                    headers=headers,
                 )
                 resp.raise_for_status()
                 data = resp.json()
@@ -628,8 +725,6 @@ class PeerService:
                 local_states = self._storage.read(STATES_FILE, {})
                 merged_states = self._merge_states(local_states, data["states"])
                 self._storage.write(STATES_FILE, merged_states)
-
-            # 同步聊天和片段数据（增量合并）
             if data.get("chat"):
                 local_chat = self._storage.read(CHAT_FILE, [])
                 merged_chat = self._merge_chat(local_chat, data["chat"])
@@ -646,7 +741,6 @@ class PeerService:
                     _logger.info(f"收到 Hub 下发的任务: {task_data.get('task_id')}")
                     asyncio.create_task(self._execute_relay_task(task_data))
 
-            # 记录本次同步时间
             self._set_peer_sync_time(peer_id, sync_start)
 
             _logger.debug(f"心跳成功: {peer_id} (增量 since={last_sync:.0f})")
@@ -661,13 +755,8 @@ class PeerService:
     # ──────────────────────────────────────────
 
     async def _handle_all_peers_failure(self):
-        """
-        处理所有可连接节点不可达。
-
-        Relay 节点 → 升级为 Temp-Full
-        内网 Full → 记录警告，继续独立运行
-        """
-        _logger.warning("所有已知可连接 Full 节点均不可达")
+        """处理所有可连接节点不可达"""
+        _logger.warning("所有已知可连接信任节点均不可达")
         self._heartbeat_failures = 0
 
         if self._node.is_relay:
@@ -680,7 +769,6 @@ class PeerService:
                 except asyncio.CancelledError:
                     pass
 
-            # Temp-Full 但不可直连 → 独立运行
             if self._node.connectable:
                 self._sync_task = asyncio.create_task(self._gossip_loop())
             else:
@@ -700,15 +788,13 @@ class PeerService:
             try:
                 await asyncio.sleep(interval)
 
-                peers = self._discover_connectable_peers()
+                peers = self._discover_trusted_connectable_peers()
 
                 for peer in peers:
                     peer_url = self._get_peer_url(peer)
                     try:
-                        # 携带 node_key 用于远端认证
-                        params = {"node_key": self._node.node_key} if self._node.node_key else {}
                         async with httpx.AsyncClient(timeout=timeout) as client:
-                            resp = await client.get(f"{peer_url}/api/v1/system/info", params=params)
+                            resp = await client.get(f"{peer_url}/api/v1/peer/handshake")
                             if resp.status_code == 200:
                                 _logger.info(f"检测到可连接 Full 节点恢复: {peer_url}")
                                 self._node.demote_from_temp_full()
@@ -734,14 +820,70 @@ class PeerService:
     # ──────────────────────────────────────────
 
     def _merge_nodes(self, local: dict, remote: dict) -> dict:
-        """合并节点注册表（以最新的 registered_at 为准）"""
+        """
+        合并节点注册表。
+        
+        信任状态合并规则：
+        - kicked 状态优先（任何一方标记 kicked，结果就是 kicked）
+        - 远端 trusted + 本地没有 → 保存为 trusted
+        - 远端 trusted + 本地 pending → 升级为 trusted（信任传播）
+        - 不改变 self 状态
+        - 以最新的 registered_at 为准
+        """
         merged = dict(local)
-        for node_id, info in remote.items():
+        for node_id, remote_info in remote.items():
+            remote_trust = remote_info.get("trust_status", "")
+
             if node_id not in merged:
-                merged[node_id] = info
+                # 新节点：直接采用远端数据
+                # 但不接受 self 状态（那是对方自己的 self）
+                if remote_trust == TrustStatus.SELF.value:
+                    remote_info = dict(remote_info)
+                    remote_info["trust_status"] = TrustStatus.TRUSTED.value
+                merged[node_id] = remote_info
             else:
-                if info.get("registered_at", 0) > merged[node_id].get("registered_at", 0):
-                    merged[node_id] = info
+                local_info = merged[node_id]
+                local_trust = local_info.get("trust_status", "")
+
+                # 不更新自己的 self 状态
+                if local_trust == TrustStatus.SELF.value:
+                    continue
+
+                # kicked 优先：任何一方标记 kicked，结果就是 kicked
+                if remote_trust == TrustStatus.KICKED.value:
+                    if local_trust != TrustStatus.KICKED.value:
+                        merged[node_id] = remote_info
+                    elif remote_info.get("kicked_at", 0) > local_info.get("kicked_at", 0):
+                        merged[node_id] = remote_info
+                    continue
+
+                if local_trust == TrustStatus.KICKED.value:
+                    # 本地已是 kicked，保持不变
+                    continue
+
+                # 信任传播：远端 trusted + 本地 pending → trusted
+                if remote_trust == TrustStatus.TRUSTED.value and local_trust == TrustStatus.PENDING.value:
+                    merged[node_id] = remote_info
+                    continue
+
+                # 信任传播：远端 trusted + 本地 waiting → trusted
+                if remote_trust == TrustStatus.TRUSTED.value and local_trust == TrustStatus.WAITING_APPROVAL.value:
+                    merged[node_id] = remote_info
+                    continue
+
+                # 对于远端 self 状态，在合并时视为 trusted
+                if remote_trust == TrustStatus.SELF.value:
+                    remote_info = dict(remote_info)
+                    remote_info["trust_status"] = TrustStatus.TRUSTED.value
+
+                # 时间戳更新：以最新的 registered_at 为准
+                if remote_info.get("registered_at", 0) > local_info.get("registered_at", 0):
+                    # 保持本地的信任状态（除非已在上面处理过）
+                    old_trust = merged[node_id].get("trust_status")
+                    merged[node_id] = remote_info
+                    if old_trust and remote_trust not in (TrustStatus.KICKED.value, TrustStatus.TRUSTED.value):
+                        merged[node_id]["trust_status"] = old_trust
+
         return merged
 
     def _merge_states(self, local: dict, remote: dict) -> dict:
@@ -768,7 +910,6 @@ class PeerService:
 
         merged.sort(key=lambda m: m.get("timestamp", 0))
 
-        # 限制最大消息数量，防止无限增长
         max_messages = 500
         if len(merged) > max_messages:
             merged = merged[-max_messages:]
@@ -776,12 +917,7 @@ class PeerService:
         return merged
 
     def _merge_snippets(self, local: list, remote: list) -> list:
-        """
-        合并信息片段（按 id 去重，以 updated_at 最新的为准）。
-
-        注意：保留 _deleted 标记的记录参与合并，防止已删除的片段
-        因另一端尚未同步删除操作而"复活"。只在最终读取时过滤。
-        """
+        """合并信息片段（按 id 去重，以 updated_at 最新的为准）"""
         snippets_map = {}
 
         for snippet in local:
@@ -796,11 +932,9 @@ class PeerService:
             if sid not in snippets_map:
                 snippets_map[sid] = snippet
             else:
-                # 保留最新版本（包括 _deleted 标记）
                 if snippet.get("updated_at", 0) > snippets_map[sid].get("updated_at", 0):
                     snippets_map[sid] = snippet
 
-        # 保留所有记录（含 _deleted），由读取端过滤
         result = list(snippets_map.values())
         result.sort(key=lambda s: s.get("created_at", 0))
         return result
@@ -839,13 +973,7 @@ class PeerService:
     # ──────────────────────────────────────────
 
     def handle_sync(self, request_data: dict) -> dict:
-        """
-        处理来自其他节点的同步请求（Gossip 或内网 Full 主动同步）。
-
-        支持增量同步：
-        - 请求中带 since 参数时，只返回该时间之后变更的数据
-        - since=0 或不存在时，返回全量数据（兼容旧版本）
-        """
+        """处理来自其他节点的同步请求"""
         since = request_data.get("since", 0)
         remote_nodes = request_data.get("nodes", {})
         remote_states = request_data.get("states", {})
@@ -857,7 +985,6 @@ class PeerService:
         local_chat = self._storage.read(CHAT_FILE, [])
         local_snippets = self._storage.read(SNIPPETS_FILE, [])
 
-        # 合并远端增量数据到本地
         merged_nodes = self._merge_nodes(local_nodes, remote_nodes)
         merged_states = self._merge_states(local_states, remote_states)
         merged_chat = self._merge_chat(local_chat, remote_chat)
@@ -868,7 +995,6 @@ class PeerService:
         self._storage.write(CHAT_FILE, merged_chat)
         self._storage.write(SNIPPETS_FILE, merged_snippets)
 
-        # 返回增量数据给请求方
         resp_nodes = self._filter_nodes_since(merged_nodes, since)
         resp_states = self._filter_states_since(merged_states, since)
         resp_chat = self._filter_chat_since(merged_chat, since)
@@ -884,16 +1010,11 @@ class PeerService:
         }
 
     def handle_heartbeat(self, request_data: dict) -> dict:
-        """
-        处理来自 Relay 节点的心跳请求。
-        
-        支持增量：根据 since 参数只返回变更的数据。
-        """
+        """处理来自 Relay 节点的心跳请求"""
         relay_id = request_data.get("node_id", "")
         system_info = request_data.get("system_info", {})
         since = request_data.get("since", 0)
 
-        # 更新 Relay 状态
         state = {
             "node_id": relay_id,
             "status": "online",
@@ -918,6 +1039,8 @@ class PeerService:
                 "host": "",
                 "port": 8300,
                 "registered_at": time.time(),
+                "public_key": "",
+                "trust_status": TrustStatus.TRUSTED.value,
             }
             self._storage.write(NODES_FILE, nodes)
 
@@ -926,18 +1049,15 @@ class PeerService:
         all_chat = self._storage.read(CHAT_FILE, [])
         all_snippets = self._storage.read(SNIPPETS_FILE, [])
 
-        # 增量过滤返回数据
         resp_nodes = self._filter_nodes_since(all_nodes, since)
         resp_states = self._filter_states_since(all_states, since)
         resp_chat = self._filter_chat_since(all_chat, since)
         resp_snippets = self._filter_snippets_since(all_snippets, since)
 
-        # 获取待分发给该 Relay 的任务
         pending_tasks = []
         if self._task_service:
             pending_tasks = self._task_service.get_pending_tasks_for_relay(relay_id)
 
-        # 处理 Relay 上报的任务结果
         task_results = request_data.get("task_results", [])
         if task_results and self._task_service:
             self._task_service.report_task_results(task_results)

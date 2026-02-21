@@ -1,7 +1,7 @@
 """
 节点数据模型
 
-定义节点注册信息和运行模式。
+定义节点注册信息、运行模式和信任状态。
 """
 
 import time
@@ -17,6 +17,15 @@ class NodeMode(str, Enum):
     TEMP_FULL = "temp_full"  # 临时全功能模式（所有 Full 节点下线时自动升级）
 
 
+class TrustStatus(str, Enum):
+    """节点信任状态"""
+    SELF = "self"                       # 本机节点
+    PENDING = "pending"                 # 收到加入申请，待审批
+    TRUSTED = "trusted"                 # 已批准，正式网络成员
+    KICKED = "kicked"                   # 已被踢出网络
+    WAITING_APPROVAL = "waiting_approval"  # 我发出了申请，等对方批准（仅本地视角）
+
+
 class NodeInfo(BaseModel):
     """
     节点注册信息（持久化到 nodes.json）
@@ -30,7 +39,9 @@ class NodeInfo(BaseModel):
     public_url: str = Field("", description="公网可访问的 URL（connectable=true 时填写）")
     primary_server: str = Field("", description="Relay 模式的 Primary 地址")
     registered_at: float = Field(default_factory=time.time, description="注册时间戳")
-    node_key_hash: str = Field("", description="节点密钥的哈希值（用于认证）")
+    public_key: str = Field("", description="节点 secp256k1 公钥（hex 编码）")
+    trust_status: TrustStatus = Field(TrustStatus.PENDING, description="信任状态")
+    kicked_at: float = Field(0, description="被踢出的时间戳（trust_status=kicked 时有效）")
 
     @property
     def url(self) -> str:

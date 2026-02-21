@@ -64,7 +64,6 @@ _BUILTIN_DEFAULTS: dict[str, Any] = {
         "max_heartbeat_failures": 3,
     },
     "security": {
-        "node_key": "",
         "admin_user": "admin",
         "admin_password": "",
         "command_blacklist": [
