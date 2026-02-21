@@ -12,6 +12,7 @@ from api.v1.auth import router as auth_router
 from api.v1.config_api import router as config_router
 from api.v1.chat import router as chat_router
 from api.v1.snippets import router as snippets_router
+from api.v1.terminal import router as terminal_router
 
 router = APIRouter(prefix="/api/v1")
 
@@ -24,3 +25,4 @@ router.include_router(auth_router)
 router.include_router(config_router)
 router.include_router(chat_router)
 router.include_router(snippets_router)
+router.include_router(terminal_router)

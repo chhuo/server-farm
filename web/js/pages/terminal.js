@@ -1,13 +1,16 @@
 /**
  * 远程终端页面
- * 在指定节点上执行命令，支持本机和远程节点。
- * NAT 后的 Relay 节点通过 Full 节点心跳队列转发命令。
+ * 使用 xterm.js + WebSocket 实现真实终端体验。
+ * 支持持久 Shell 会话（cd 保持、环境变量保持、Tab 补全、Ctrl+C 等）。
  */
 
 const TerminalPage = {
     title: '远程终端',
-    _history: [],
-    _historyIndex: -1,
+    _term: null,
+    _ws: null,
+    _fitAddon: null,
+    _resizeObserver: null,
+    _reconnectTimer: null,
 
     render() {
         return `
@@ -21,38 +24,113 @@ const TerminalPage = {
                 <div class="terminal-info">
                     <span class="tag blue" id="term-mode">--</span>
                     <span class="tag green" id="term-status">--</span>
+                    <span class="tag" id="term-conn-status" style="display:none">--</span>
+                    <button class="btn-sm" id="term-reconnect-btn" style="display:none">重新连接</button>
                 </div>
             </div>
-
-            <div class="panel terminal-panel">
-                <div class="terminal-output" id="term-output">
-                    <div class="terminal-welcome">
-                        <span style="color:var(--accent-green)">NodePanel Terminal</span>
-                        <br>输入命令并按 Enter 执行，支持远程节点。
-                        <br><span style="color:var(--text-muted)">提示：NAT 后的 Relay 节点命令会通过心跳队列异步执行。</span>
-                    </div>
-                </div>
-                <div class="terminal-input-row">
-                    <span class="terminal-prompt">$</span>
-                    <input type="text" class="terminal-input" id="term-input"
-                           placeholder="输入命令..." autocomplete="off"
-                           spellcheck="false">
-                </div>
-            </div>
+            <div class="terminal-xterm-container" id="term-container"></div>
         `;
     },
 
     mount() {
         this._loadNodes();
+        this._initTerminal();
 
-        const input = document.getElementById('term-input');
-        if (input) {
-            input.addEventListener('keydown', (e) => this._handleKey(e));
-            input.focus();
+        // 重新连接按钮
+        const reconnBtn = document.getElementById('term-reconnect-btn');
+        if (reconnBtn) {
+            reconnBtn.addEventListener('click', () => this._connect());
         }
     },
 
-    destroy() { },
+    destroy() {
+        this._disconnect();
+        if (this._resizeObserver) {
+            this._resizeObserver.disconnect();
+            this._resizeObserver = null;
+        }
+        if (this._term) {
+            this._term.dispose();
+            this._term = null;
+        }
+        if (this._reconnectTimer) {
+            clearTimeout(this._reconnectTimer);
+            this._reconnectTimer = null;
+        }
+    },
+
+    _initTerminal() {
+        const container = document.getElementById('term-container');
+        if (!container || typeof Terminal === 'undefined') return;
+
+        // 创建 xterm.js 实例
+        this._term = new Terminal({
+            cursorBlink: true,
+            cursorStyle: 'bar',
+            fontSize: 14,
+            fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace",
+            theme: {
+                background: '#0a0e14',
+                foreground: '#e0e0e0',
+                cursor: '#10b981',
+                cursorAccent: '#0a0e14',
+                selectionBackground: 'rgba(59, 130, 246, 0.3)',
+                black: '#0a0e14',
+                red: '#ef4444',
+                green: '#10b981',
+                yellow: '#f59e0b',
+                blue: '#3b82f6',
+                magenta: '#a855f7',
+                cyan: '#06b6d4',
+                white: '#e0e0e0',
+                brightBlack: '#6b7280',
+                brightRed: '#f87171',
+                brightGreen: '#34d399',
+                brightYellow: '#fbbf24',
+                brightBlue: '#60a5fa',
+                brightMagenta: '#c084fc',
+                brightCyan: '#22d3ee',
+                brightWhite: '#ffffff',
+            },
+            allowProposedApi: true,
+            scrollback: 5000,
+            convertEol: true,
+        });
+
+        // Fit addon — 自动适配容器尺寸
+        if (typeof FitAddon !== 'undefined') {
+            this._fitAddon = new FitAddon.FitAddon();
+            this._term.loadAddon(this._fitAddon);
+        }
+
+        // 挂载到 DOM
+        this._term.open(container);
+
+        // 初始适配
+        if (this._fitAddon) {
+            setTimeout(() => this._fitAddon.fit(), 50);
+        }
+
+        // 监听容器尺寸变化
+        this._resizeObserver = new ResizeObserver(() => {
+            if (this._fitAddon) {
+                this._fitAddon.fit();
+            }
+        });
+        this._resizeObserver.observe(container);
+
+        // 用户输入 → 发送到 WebSocket
+        this._term.onData((data) => {
+            if (this._ws && this._ws.readyState === WebSocket.OPEN) {
+                this._ws.send(data);
+            }
+        });
+
+        // 欢迎信息
+        this._term.writeln('\x1b[32mNodePanel Terminal\x1b[0m');
+        this._term.writeln('\x1b[90m正在连接...\x1b[0m');
+        this._term.writeln('');
+    },
 
     async _loadNodes() {
         try {
@@ -66,10 +144,20 @@ const TerminalPage = {
                 return `<option value="${n.node_id}" ${n.is_self ? 'selected' : ''}>${label}</option>`;
             }).join('');
 
-            select.addEventListener('change', () => this._updateTargetInfo(nodes));
+            select.addEventListener('change', () => {
+                this._updateTargetInfo(nodes);
+                // 切换节点时重新连接
+                this._connect();
+            });
             this._updateTargetInfo(nodes);
+
+            // 初始连接
+            this._connect();
         } catch (err) {
             console.error('加载节点失败:', err);
+            if (this._term) {
+                this._term.writeln('\x1b[31m加载节点列表失败\x1b[0m');
+            }
         }
     },
 
@@ -90,94 +178,104 @@ const TerminalPage = {
         }
     },
 
-    _handleKey(e) {
-        if (e.key === 'Enter') {
-            e.preventDefault();
-            const input = document.getElementById('term-input');
-            const command = input.value.trim();
-            if (command) {
-                this._history.push(command);
-                this._historyIndex = this._history.length;
-                input.value = '';
-                this._executeCommand(command);
-            }
-        } else if (e.key === 'ArrowUp') {
-            e.preventDefault();
-            if (this._historyIndex > 0) {
-                this._historyIndex--;
-                document.getElementById('term-input').value = this._history[this._historyIndex];
-            }
-        } else if (e.key === 'ArrowDown') {
-            e.preventDefault();
-            if (this._historyIndex < this._history.length - 1) {
-                this._historyIndex++;
-                document.getElementById('term-input').value = this._history[this._historyIndex];
-            } else {
-                this._historyIndex = this._history.length;
-                document.getElementById('term-input').value = '';
-            }
-        }
-    },
+    _connect() {
+        // 先断开旧连接
+        this._disconnect();
 
-    async _executeCommand(command) {
-        const output = document.getElementById('term-output');
         const select = document.getElementById('term-target');
         const targetId = select ? select.value : '';
 
-        // 显示命令
-        this._appendOutput(`<span class="term-prompt-line">$ ${this._escapeHtml(command)}</span>`);
+        if (!targetId) return;
 
-        // 特殊命令
-        if (command === 'clear') {
-            output.innerHTML = '';
-            return;
+        // 构建 WebSocket URL
+        const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${proto}//${location.host}/api/v1/terminal/ws?node_id=${encodeURIComponent(targetId)}`;
+
+        this._updateConnStatus('connecting', '连接中...');
+
+        // 清屏并显示连接信息
+        if (this._term) {
+            this._term.clear();
+            this._term.writeln('\x1b[32mNodePanel Terminal\x1b[0m');
+            this._term.writeln(`\x1b[90m连接到 ${targetId}...\x1b[0m`);
+            this._term.writeln('');
         }
 
         try {
-            const result = await API.post('/api/v1/tasks/execute', {
-                command: command,
-                target_node_id: targetId,
-                timeout: 60,
-            });
+            this._ws = new WebSocket(wsUrl);
 
-            if (result.queued) {
-                // Relay 节点，命令排队
-                this._appendOutput(
-                    `<span class="term-info">⏳ ${result.message}</span>\n` +
-                    `<span class="term-info">任务 ID: ${result.task_id}</span>`
-                );
-            } else if (result.error) {
-                this._appendOutput(`<span class="term-error">错误: ${this._escapeHtml(result.error)}</span>`);
-            } else {
-                // 直接执行结果
-                if (result.stdout) {
-                    this._appendOutput(`<span class="term-stdout">${this._escapeHtml(result.stdout)}</span>`);
+            this._ws.onopen = () => {
+                this._updateConnStatus('connected', '已连接');
+                if (this._term) {
+                    this._term.focus();
                 }
-                if (result.stderr) {
-                    this._appendOutput(`<span class="term-stderr">${this._escapeHtml(result.stderr)}</span>`);
+            };
+
+            this._ws.onmessage = (event) => {
+                if (this._term && event.data) {
+                    this._term.write(event.data);
                 }
-                if (result.exit_code !== 0 && result.exit_code !== undefined) {
-                    this._appendOutput(`<span class="term-error">退出码: ${result.exit_code}</span>`);
+            };
+
+            this._ws.onclose = (event) => {
+                const reason = event.reason || '连接已关闭';
+                this._updateConnStatus('disconnected', '已断开');
+                if (this._term) {
+                    this._term.writeln('');
+                    this._term.writeln(`\x1b[31m[终端连接已断开: ${reason}]\x1b[0m`);
+                    this._term.writeln('\x1b[90m点击"重新连接"按钮或切换节点重新连接\x1b[0m');
                 }
-            }
+            };
+
+            this._ws.onerror = (error) => {
+                console.error('WebSocket error:', error);
+                this._updateConnStatus('error', '连接错误');
+            };
+
         } catch (err) {
-            this._appendOutput(`<span class="term-error">请求失败: ${this._escapeHtml(err.message)}</span>`);
+            console.error('WebSocket 创建失败:', err);
+            this._updateConnStatus('error', '连接失败');
+            if (this._term) {
+                this._term.writeln(`\x1b[31m连接失败: ${err.message}\x1b[0m`);
+            }
         }
     },
 
-    _appendOutput(html) {
-        const output = document.getElementById('term-output');
-        if (!output) return;
-        const div = document.createElement('div');
-        div.className = 'term-line';
-        div.innerHTML = html;
-        output.appendChild(div);
-        output.scrollTop = output.scrollHeight;
+    _disconnect() {
+        if (this._reconnectTimer) {
+            clearTimeout(this._reconnectTimer);
+            this._reconnectTimer = null;
+        }
+        if (this._ws) {
+            try {
+                this._ws.close();
+            } catch (e) { }
+            this._ws = null;
+        }
     },
 
-    _escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
+    _updateConnStatus(state, text) {
+        const el = document.getElementById('term-conn-status');
+        const btn = document.getElementById('term-reconnect-btn');
+        if (!el) return;
+
+        el.style.display = 'inline-flex';
+        el.textContent = text;
+
+        switch (state) {
+            case 'connecting':
+                el.className = 'tag yellow';
+                if (btn) btn.style.display = 'none';
+                break;
+            case 'connected':
+                el.className = 'tag green';
+                if (btn) btn.style.display = 'none';
+                break;
+            case 'disconnected':
+            case 'error':
+                el.className = 'tag red';
+                if (btn) btn.style.display = 'inline-block';
+                break;
+        }
     },
 };

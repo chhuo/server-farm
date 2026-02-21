@@ -507,7 +507,7 @@
     display: flex;
     justify-content: space-between;
     align-items: flex-end;
-    margin-bottom: 16px;
+    margin-bottom: 12px;
     gap: 16px;
 }
 
@@ -524,85 +524,30 @@
     display: flex;
     gap: 8px;
     padding-bottom: 4px;
-}
-
-.terminal-panel {
-    display: flex;
-    flex-direction: column;
-    min-height: 500px;
-}
-
-.terminal-output {
-    flex: 1;
-    padding: 16px;
-    font-family: var(--font-mono);
-    font-size: 0.85rem;
-    line-height: 1.6;
-    max-height: 60vh;
-    overflow-y: auto;
-    background: #0a0e14;
-    color: var(--text-primary);
-}
-
-.terminal-welcome {
-    color: var(--text-muted);
-    padding-bottom: 12px;
-    margin-bottom: 12px;
-    border-bottom: 1px solid var(--border-subtle);
-    line-height: 1.8;
-}
-
-.terminal-input-row {
-    display: flex;
     align-items: center;
-    padding: 12px 16px;
-    border-top: 1px solid var(--border-subtle);
-    background: #0c1018;
 }
 
-.terminal-prompt {
-    color: var(--accent-green);
-    font-family: var(--font-mono);
-    font-weight: 700;
-    margin-right: 10px;
-    font-size: 0.9rem;
+/* xterm.js 容器 */
+.terminal-xterm-container {
+    background: #0a0e14;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: 8px;
+    height: calc(100vh - var(--topbar-height) - 140px);
+    min-height: 400px;
+    overflow: hidden;
 }
 
-.terminal-input {
-    flex: 1;
-    background: transparent;
-    border: none;
-    color: var(--text-primary);
-    font-family: var(--font-mono);
-    font-size: 0.85rem;
-    outline: none;
-    caret-color: var(--accent-green);
+.terminal-xterm-container .xterm {
+    height: 100%;
 }
 
-.term-line {
-    margin-bottom: 4px;
-    white-space: pre-wrap;
-    word-break: break-all;
+.terminal-xterm-container .xterm-viewport {
+    border-radius: var(--radius-sm);
 }
 
-.term-prompt-line {
-    color: var(--accent-cyan);
-}
-
-.term-stdout {
-    color: var(--text-primary);
-}
-
-.term-stderr {
-    color: var(--accent-yellow);
-}
-
-.term-error {
-    color: var(--accent-red);
-}
-
-.term-info {
-    color: var(--accent-blue);
+.terminal-xterm-container .xterm-screen {
+    height: 100%;
 }
 
 /* ── 标签栏 ── */
