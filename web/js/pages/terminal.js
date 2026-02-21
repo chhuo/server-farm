@@ -102,6 +102,17 @@ const TerminalPage = {
             this._term.loadAddon(this._fitAddon);
         }
 
+        // 允许浏览器处理 Ctrl+V 粘贴 和 Ctrl+C 复制
+        this._term.attachCustomKeyEventHandler((event) => {
+            if (event.type === 'keydown') {
+                // Ctrl+V → 让浏览器粘贴
+                if (event.ctrlKey && event.key === 'v') return false;
+                // Ctrl+C 且有选中文本 → 让浏览器复制（无选中时保留终端 SIGINT 行为）
+                if (event.ctrlKey && event.key === 'c' && this._term.hasSelection()) return false;
+            }
+            return true;
+        });
+
         // 挂载到 DOM
         this._term.open(container);
 
