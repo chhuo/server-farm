@@ -94,7 +94,6 @@ const TerminalPage = {
             },
             allowProposedApi: true,
             scrollback: 5000,
-            convertEol: true,
         });
 
         // Fit addon — 自动适配容器尺寸
@@ -118,6 +117,13 @@ const TerminalPage = {
             }
         });
         this._resizeObserver.observe(container);
+
+        // 终端尺寸变化 → 通知后端 PTY resize
+        this._term.onResize(({ cols, rows }) => {
+            if (this._ws && this._ws.readyState === WebSocket.OPEN) {
+                this._ws.send(JSON.stringify({ type: 'resize', cols, rows }));
+            }
+        });
 
         // 用户输入 → 发送到 WebSocket
         this._term.onData((data) => {
@@ -207,6 +213,10 @@ const TerminalPage = {
             this._ws.onopen = () => {
                 this._updateConnStatus('connected', '已连接');
                 if (this._term) {
+                    // 发送初始终端尺寸，让后端 PTY 匹配
+                    const cols = this._term.cols;
+                    const rows = this._term.rows;
+                    this._ws.send(JSON.stringify({ type: 'resize', cols, rows }));
                     this._term.focus();
                 }
             };
