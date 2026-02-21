@@ -215,10 +215,8 @@ const TerminalPage = {
             this._ws.onopen = () => {
                 this._updateConnStatus('connected', '已连接');
                 if (this._term) {
-                    // 发送初始终端尺寸，让后端 PTY 匹配
-                    const cols = this._term.cols;
-                    const rows = this._term.rows;
-                    this._ws.send(JSON.stringify({ type: 'resize', cols, rows }));
+                    // 重置终端，清除欢迎文字，让光标回到 (0,0) 与 PTY 同步
+                    this._term.reset();
                     this._term.focus();
                 }
             };
