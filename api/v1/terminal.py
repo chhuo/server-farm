@@ -232,7 +232,8 @@ class ShellSession:
 
 
 @router.websocket("/ws")
-async def terminal_ws(websocket: WebSocket, node_id: str = Query(default="")):
+async def terminal_ws(websocket: WebSocket, node_id: str = Query(default=""),
+                      cols: int = Query(default=80), rows: int = Query(default=24)):
     """
     WebSocket 终端端点。
 
@@ -273,7 +274,7 @@ async def terminal_ws(websocket: WebSocket, node_id: str = Query(default="")):
         target_mode = target_info.get("mode", "")
         if target_mode in ("full", "temp_full"):
             # 代理到远程 Full 节点的 WebSocket
-            await _proxy_to_remote(websocket, target_info, target_id)
+            await _proxy_to_remote(websocket, target_info, target_id, cols, rows)
             return
         else:
             await websocket.send_text(
@@ -285,7 +286,7 @@ async def terminal_ws(websocket: WebSocket, node_id: str = Query(default="")):
     # 本机 — 启动 PTY shell 会话
     shell = ShellSession()
     try:
-        shell.start(cols=80, rows=24)
+        shell.start(cols=cols, rows=rows)
     except Exception as e:
         _logger.error(f"启动 PTY 失败: {e}")
         await websocket.send_text(f"\r\n\x1b[31m启动终端失败: {e}\x1b[0m\r\n")
@@ -353,7 +354,8 @@ async def terminal_ws(websocket: WebSocket, node_id: str = Query(default="")):
         _logger.info("终端会话结束")
 
 
-async def _proxy_to_remote(websocket: WebSocket, target_info: dict, target_id: str):
+async def _proxy_to_remote(websocket: WebSocket, target_info: dict, target_id: str,
+                           cols: int = 80, rows: int = 24):
     """
     代理 WebSocket 到远程 Full 节点。
     """
@@ -361,7 +363,7 @@ async def _proxy_to_remote(websocket: WebSocket, target_info: dict, target_id: s
 
     host = target_info.get("host", "")
     port = target_info.get("port", 8300)
-    remote_url = f"ws://{host}:{port}/api/v1/terminal/ws?node_id={target_id}"
+    remote_url = f"ws://{host}:{port}/api/v1/terminal/ws?node_id={target_id}&cols={cols}&rows={rows}"
 
     _logger.info(f"代理终端到远程节点: {remote_url}")
 

@@ -195,7 +195,9 @@ const TerminalPage = {
 
         // 构建 WebSocket URL
         const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const wsUrl = `${proto}//${location.host}/api/v1/terminal/ws?node_id=${encodeURIComponent(targetId)}`;
+        const cols = this._term ? this._term.cols : 80;
+        const rows = this._term ? this._term.rows : 24;
+        const wsUrl = `${proto}//${location.host}/api/v1/terminal/ws?node_id=${encodeURIComponent(targetId)}&cols=${cols}&rows=${rows}`;
 
         this._updateConnStatus('connecting', '连接中...');
 
