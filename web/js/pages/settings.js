@@ -106,7 +106,8 @@ const SettingsPage = {
                     ${this._renderSetting('运行模式', cfg.node?.mode || '--')}
                     ${this._renderToggleSetting('有公网 IP（可被其他节点直连）', cfg.node?.connectable ?? false, 'node.connectable')}
                     ${this._renderEditableTextSetting('公网地址', cfg.node?.public_url || '', 'node.public_url', 'https://your-server.example.com')}
-                    ${this._renderSetting('应用版本', `${cfg.app?.name} v${cfg.app?.version}`)}
+                    ${this._renderEditableTextSetting('面板名称', cfg.app?.name || 'NodePanel', 'app.name', '自定义面板名称')}
+                    ${this._renderSetting('应用版本', `v${cfg.app?.version}`)}
                     ${this._renderSetting('运行环境', cfg.app?.env || '--')}
                 `;
             }
@@ -210,6 +211,14 @@ const SettingsPage = {
             await API.post('/api/v1/config/update', { updates: { [key]: value } });
             btnEl.textContent = '✓';
             setTimeout(() => btnEl.textContent = '保存', 1500);
+
+            // 如果修改的是面板名称，实时更新页面品牌
+            if (key === 'app.name' && value) {
+                window._branding.name = value;
+                document.title = value;
+                const logoText = document.getElementById('logo-text');
+                if (logoText) logoText.textContent = value;
+            }
         } catch (err) {
             btnEl.textContent = '✗';
             setTimeout(() => btnEl.textContent = '保存', 1500);

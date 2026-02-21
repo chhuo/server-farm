@@ -1,10 +1,14 @@
 /**
- * NodePanel SPA 入口
+ * SPA 入口
  * 集成认证守卫：未登录时跳转登录页，登录后恢复侧边栏。
+ * 面板名称从后端配置动态获取。
  */
 
 (function () {
     'use strict';
+
+    // 全局品牌信息（面板名称），供各页面读取
+    window._branding = { name: 'NodePanel', version: '0.1.0' };
 
     // 注册路由
     Router.register('/dashboard', DashboardPage);
@@ -26,7 +30,31 @@
         }
     }
 
+    // 加载品牌信息（无需认证）
+    async function loadBranding() {
+        try {
+            const data = await API.get('/api/v1/system/branding');
+            if (data && data.name) {
+                window._branding.name = data.name;
+            }
+            if (data && data.version) {
+                window._branding.version = data.version;
+            }
+        } catch (e) {
+            // 失败时使用默认值
+        }
+        // 应用品牌到页面
+        document.title = window._branding.name;
+        const logoText = document.getElementById('logo-text');
+        if (logoText) logoText.textContent = window._branding.name;
+        const versionBadge = document.getElementById('version-badge');
+        if (versionBadge) versionBadge.textContent = 'v' + window._branding.version;
+    }
+
     async function initApp() {
+        // 先加载品牌信息
+        await loadBranding();
+
         const authenticated = await checkAuth();
 
         if (!authenticated) {
@@ -172,5 +200,5 @@
     }
 
     initApp();
-    console.log('[NodePanel] 应用已启动');
+    console.log(`[${window._branding.name}] 应用已启动`);
 })();

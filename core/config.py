@@ -409,9 +409,10 @@ class ConfigManager:
                     current[section] = copy.deepcopy(section_data)
 
             # YAML 文件头注释
+            app_name = self.get("app.name", "NodePanel")
             header = (
                 "# ============================================================\n"
-                "# NodePanel 配置文件\n"
+                f"# {app_name} 配置文件\n"
                 "# ============================================================\n"
                 "# 加载优先级（从低到高）：\n"
                 "#   1. 内置默认值（代码中硬编码）\n"

@@ -1,6 +1,6 @@
 /**
  * 登录页面
- * 全屏居中的登录表单，暗色主题，带 NodePanel 品牌。
+ * 全屏居中的登录表单，暗色主题，品牌名称从配置动态获取。
  */
 
 const LoginPage = {
@@ -14,8 +14,8 @@ const LoginPage = {
                 <div class="login-card">
                     <div class="login-logo">
                         <div class="login-logo-icon">⬡</div>
-                        <h1 class="login-title">NodePanel</h1>
-                        <p class="login-subtitle">分布式服务器控制面板</p>
+                        <h1 class="login-title" id="login-brand-title">NodePanel</h1>
+                        <p class="login-subtitle">分布式服务器管理面板</p>
                     </div>
 
                     <div id="initial-creds-box" style="display:none"
@@ -56,6 +56,12 @@ const LoginPage = {
     },
 
     mount() {
+        // 应用品牌名称
+        const brandTitle = document.getElementById('login-brand-title');
+        if (brandTitle && window._branding) {
+            brandTitle.textContent = window._branding.name;
+        }
+
         const form = document.getElementById('login-form');
         if (form) {
             form.addEventListener('submit', (e) => {

@@ -133,7 +133,7 @@ const TerminalPage = {
         });
 
         // 欢迎信息
-        this._term.writeln('\x1b[32mNodePanel Terminal\x1b[0m');
+        this._term.writeln(`\x1b[32m${window._branding?.name || 'NodePanel'} Terminal\x1b[0m`);
         this._term.writeln('\x1b[90m正在连接...\x1b[0m');
         this._term.writeln('');
     },
@@ -202,7 +202,7 @@ const TerminalPage = {
         // 清屏并显示连接信息
         if (this._term) {
             this._term.clear();
-            this._term.writeln('\x1b[32mNodePanel Terminal\x1b[0m');
+            this._term.writeln(`\x1b[32m${window._branding?.name || 'NodePanel'} Terminal\x1b[0m`);
             this._term.writeln(`\x1b[90m连接到 ${targetId}...\x1b[0m`);
             this._term.writeln('');
         }

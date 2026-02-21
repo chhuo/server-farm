@@ -67,7 +67,7 @@ async def update_config(request: Request):
     data = await request.json()
 
     allowed_fields = {
-        "app.debug", "app.env",
+        "app.name", "app.debug", "app.env",
         "node.name", "node.mode", "node.primary_server",
         "node.public_url", "node.connectable",
         "peer.sync_interval", "peer.heartbeat_interval",
