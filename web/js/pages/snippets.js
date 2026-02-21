@@ -95,6 +95,77 @@ const SnippetsPage = {
             this._openDialog();
         });
 
+        // 使用事件委托处理列表中的所有点击
+        document.getElementById('snippets-list').addEventListener('click', (e) => {
+            // 点击可复制的字段值（仅在没有选中文字时触发全量复制）
+            const copyEl = e.target.closest('.snippet-field-value.copyable');
+            if (copyEl) {
+                e.stopPropagation();
+                const sel = window.getSelection();
+                // 如果用户拖选了文字，不触发全量复制，让他们手动复制选中部分
+                if (sel && sel.toString().length > 0) {
+                    return;
+                }
+                const val = copyEl.getAttribute('data-value');
+                if (val !== null && val !== undefined) {
+                    this._copyToClipboard(val, copyEl);
+                }
+                return;
+            }
+
+            // 显示/隐藏敏感字段
+            const revealBtn = e.target.closest('.snippet-reveal-btn');
+            if (revealBtn) {
+                e.stopPropagation();
+                const key = revealBtn.getAttribute('data-key');
+                if (this._revealedFields.has(key)) {
+                    this._revealedFields.delete(key);
+                } else {
+                    this._revealedFields.add(key);
+                }
+                this._renderList();
+                return;
+            }
+
+            // 展开/收起隐藏卡片
+            const expandBtn = e.target.closest('.snippet-expand-btn');
+            if (expandBtn) {
+                e.stopPropagation();
+                const card = expandBtn.closest('.snippet-card');
+                const id = card?.dataset.id;
+                if (id) {
+                    if (this._expandedCards.has(id)) {
+                        this._expandedCards.delete(id);
+                    } else {
+                        this._expandedCards.add(id);
+                    }
+                    this._renderList();
+                }
+                return;
+            }
+
+            // 编辑按钮
+            const editBtn = e.target.closest('.snippet-edit-btn');
+            if (editBtn) {
+                e.stopPropagation();
+                const card = editBtn.closest('.snippet-card');
+                const id = card?.dataset.id;
+                const snippet = this._snippets.find(s => s.id === id);
+                if (snippet) this._openDialog(snippet);
+                return;
+            }
+
+            // 删除按钮
+            const deleteBtn = e.target.closest('.snippet-delete-btn');
+            if (deleteBtn) {
+                e.stopPropagation();
+                const card = deleteBtn.closest('.snippet-card');
+                const id = card?.dataset.id;
+                if (id) this._deleteSnippet(id);
+                return;
+            }
+        });
+
         // 对话框事件
         document.getElementById('snippet-dialog-close').addEventListener('click', () => this._closeDialog());
         document.getElementById('snippet-cancel-btn').addEventListener('click', () => this._closeDialog());
@@ -145,58 +216,7 @@ const SnippetsPage = {
         }
 
         container.innerHTML = items.map(s => this._renderCard(s)).join('');
-
-        // 绑定卡片事件
-        container.querySelectorAll('.snippet-card').forEach(card => {
-            const id = card.dataset.id;
-
-            // 复制按钮
-            card.querySelectorAll('.snippet-copy-btn').forEach(btn => {
-                btn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    const val = btn.dataset.value;
-                    this._copyToClipboard(val, btn);
-                });
-            });
-
-            // 显示/隐藏敏感字段
-            card.querySelectorAll('.snippet-reveal-btn').forEach(btn => {
-                btn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    const key = btn.dataset.key;
-                    if (this._revealedFields.has(key)) {
-                        this._revealedFields.delete(key);
-                    } else {
-                        this._revealedFields.add(key);
-                    }
-                    this._renderList();
-                });
-            });
-
-            // 展开隐藏的卡片
-            card.querySelector('.snippet-expand-btn')?.addEventListener('click', (e) => {
-                e.stopPropagation();
-                if (this._expandedCards.has(id)) {
-                    this._expandedCards.delete(id);
-                } else {
-                    this._expandedCards.add(id);
-                }
-                this._renderList();
-            });
-
-            // 编辑按钮
-            card.querySelector('.snippet-edit-btn')?.addEventListener('click', (e) => {
-                e.stopPropagation();
-                const snippet = this._snippets.find(s => s.id === id);
-                if (snippet) this._openDialog(snippet);
-            });
-
-            // 删除按钮
-            card.querySelector('.snippet-delete-btn')?.addEventListener('click', (e) => {
-                e.stopPropagation();
-                this._deleteSnippet(id);
-            });
-        });
+        // 事件已通过 mount() 中的事件委托统一处理
     },
 
     _renderCard(snippet) {
@@ -218,11 +238,8 @@ const SnippetsPage = {
                     return `
                         <div class="snippet-field-row">
                             <span class="snippet-field-key">${this._escapeHtml(f.key)}</span>
-                            <span class="snippet-field-value ${f.sensitive && !isRevealed ? 'masked' : ''}">${this._escapeHtml(displayValue)}</span>
-                            <div class="snippet-field-actions">
-                                ${f.sensitive ? `<button class="snippet-reveal-btn" data-key="${fieldKey}" title="${isRevealed ? '隐藏' : '显示'}">${isRevealed ? '🙈' : '👁️'}</button>` : ''}
-                                <button class="snippet-copy-btn" data-value="${this._escapeAttr(f.value)}" title="复制">📋</button>
-                            </div>
+                            <span class="snippet-field-value copyable ${f.sensitive && !isRevealed ? 'masked' : ''}" data-value="${this._escapeAttr(f.value)}" title="点击复制">${this._escapeHtml(displayValue)}</span>
+                            ${f.sensitive ? `<button class="snippet-reveal-btn" data-key="${fieldKey}" title="${isRevealed ? '隐藏' : '显示'}">${isRevealed ? '🙈' : '👁️'}</button>` : ''}
                         </div>
                     `;
                 }).join('') +
@@ -421,30 +438,57 @@ const SnippetsPage = {
         }
     },
 
-    _copyToClipboard(text, btn) {
-        navigator.clipboard.writeText(text).then(() => {
-            const orig = btn.textContent;
-            btn.textContent = '✓';
-            btn.classList.add('copied');
-            setTimeout(() => {
-                btn.textContent = orig;
-                btn.classList.remove('copied');
-            }, 1500);
-        }).catch(() => {
-            // 降级方案
-            const ta = document.createElement('textarea');
-            ta.value = text;
-            ta.style.cssText = 'position:fixed;left:-9999px';
-            document.body.appendChild(ta);
-            ta.select();
-            document.execCommand('copy');
-            document.body.removeChild(ta);
+    _copyToClipboard(text, el) {
+        const showFeedback = () => {
+            // 高亮元素
+            el.classList.add('copied');
+            setTimeout(() => el.classList.remove('copied'), 1500);
 
-            const orig = btn.textContent;
-            btn.textContent = '✓';
-            setTimeout(() => { btn.textContent = orig; }, 1500);
-        });
+            // 显示全局浮动提示
+            let toast = document.getElementById('snippet-global-toast');
+            if (!toast) {
+                toast = document.createElement('div');
+                toast.id = 'snippet-global-toast';
+                toast.className = 'snippet-global-toast';
+                document.body.appendChild(toast);
+            }
+            toast.textContent = '✓ 已复制到剪贴板';
+            toast.classList.remove('show');
+            // 强制重排后再添加 show
+            void toast.offsetWidth;
+            toast.classList.add('show');
+            clearTimeout(this._toastTimer);
+            this._toastTimer = setTimeout(() => {
+                toast.classList.remove('show');
+            }, 1500);
+        };
+
+        // 尝试使用 Clipboard API
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(() => {
+                showFeedback();
+            }).catch(() => {
+                this._fallbackCopy(text);
+                showFeedback();
+            });
+        } else {
+            this._fallbackCopy(text);
+            showFeedback();
+        }
     },
+
+    _fallbackCopy(text) {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.cssText = 'position:fixed;top:0;left:-9999px;opacity:0';
+        document.body.appendChild(ta);
+        ta.focus();
+        ta.select();
+        try { document.execCommand('copy'); } catch(e) {}
+        document.body.removeChild(ta);
+    },
+
+    _toastTimer: null,
 
     _escapeHtml(str) {
         const div = document.createElement('div');

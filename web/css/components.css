@@ -1216,23 +1216,67 @@
     font-size: 0.85rem;
     color: var(--text-primary);
     word-break: break-all;
-    user-select: all;
+    user-select: text;
+}
+
+.snippet-field-value.copyable {
+    cursor: pointer;
+    padding: 3px 8px;
+    border-radius: var(--radius-sm);
+    transition: all var(--transition-fast);
+    position: relative;
+}
+
+.snippet-field-value.copyable:hover {
+    background: rgba(59, 130, 246, 0.1);
+    color: var(--accent-blue);
+}
+
+.snippet-field-value.copyable:active {
+    background: rgba(59, 130, 246, 0.18);
+}
+
+.snippet-field-value.copyable.copied {
+    color: var(--accent-green);
+    background: rgba(16, 185, 129, 0.1);
 }
 
 .snippet-field-value.masked {
     color: var(--text-muted);
     letter-spacing: 2px;
-    user-select: none;
 }
 
-.snippet-field-actions {
-    display: flex;
-    gap: 4px;
-    flex-shrink: 0;
+.snippet-field-value.masked:hover {
+    background: rgba(59, 130, 246, 0.06);
+    color: var(--text-muted);
 }
 
-.snippet-reveal-btn,
-.snippet-copy-btn {
+/* 全局复制成功提示 */
+.snippet-global-toast {
+    position: fixed;
+    bottom: 40px;
+    left: 50%;
+    transform: translateX(-50%) translateY(20px);
+    background: var(--accent-green);
+    color: #fff;
+    font-size: 0.88rem;
+    font-weight: 500;
+    padding: 10px 24px;
+    border-radius: var(--radius-md);
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.25s ease, transform 0.25s ease;
+    z-index: 9999;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+}
+
+.snippet-global-toast.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+}
+
+.snippet-reveal-btn {
     background: none;
     border: none;
     cursor: pointer;
@@ -1241,17 +1285,12 @@
     border-radius: var(--radius-sm);
     transition: all var(--transition-fast);
     opacity: 0.6;
+    flex-shrink: 0;
 }
 
-.snippet-reveal-btn:hover,
-.snippet-copy-btn:hover {
+.snippet-reveal-btn:hover {
     opacity: 1;
     background: var(--bg-card-hover);
-}
-
-.snippet-copy-btn.copied {
-    color: var(--accent-green);
-    opacity: 1;
 }
 
 /* 片段编辑对话框字段行 */
