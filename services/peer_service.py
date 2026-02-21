@@ -705,8 +705,10 @@ class PeerService:
                 for peer in peers:
                     peer_url = self._get_peer_url(peer)
                     try:
+                        # 携带 node_key 用于远端认证
+                        params = {"node_key": self._node.node_key} if self._node.node_key else {}
                         async with httpx.AsyncClient(timeout=timeout) as client:
-                            resp = await client.get(f"{peer_url}/api/v1/system/info")
+                            resp = await client.get(f"{peer_url}/api/v1/system/info", params=params)
                             if resp.status_code == 200:
                                 _logger.info(f"检测到可连接 Full 节点恢复: {peer_url}")
                                 self._node.demote_from_temp_full()

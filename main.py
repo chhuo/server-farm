@@ -106,9 +106,13 @@ def create_app() -> FastAPI:
         EXEMPT_PREFIXES = (
             "/api/v1/auth/",
             "/api/v1/peer/",
+            "/api/v1/terminal/",
+        )
+
+        # 支持 node_key 认证的路径（节点间通信需要访问）
+        NODE_KEY_PREFIXES = (
             "/api/v1/system/info",
             "/api/v1/nodes/self",
-            "/api/v1/terminal/",
         )
 
         async def dispatch(self, request, call_next):
@@ -123,17 +127,36 @@ def create_app() -> FastAPI:
                 if path == exempt or path.startswith(exempt):
                     return await call_next(request)
 
-            # 检查 Token
+            # 检查 Token（浏览器用户）
             token = request.cookies.get("token", "")
             session = auth_service.validate_token(token)
 
-            if not session:
-                return JSONResponse(
-                    status_code=401,
-                    content={"error": "未登录或会话已过期"},
-                )
+            if session:
+                return await call_next(request)
 
-            return await call_next(request)
+            # 支持 node_key 认证的路径（节点间通信）
+            for prefix in self.NODE_KEY_PREFIXES:
+                if path == prefix or path.startswith(prefix):
+                    local_key = node_identity.node_key
+                    if not local_key:
+                        # 未配置 node_key，开放模式
+                        return await call_next(request)
+                    # 从 query parameter 或 header 中获取 node_key
+                    remote_key = (
+                        request.query_params.get("node_key", "")
+                        or request.headers.get("x-node-key", "")
+                    )
+                    if remote_key == local_key:
+                        return await call_next(request)
+                    return JSONResponse(
+                        status_code=401,
+                        content={"error": "未登录或会话已过期"},
+                    )
+
+            return JSONResponse(
+                status_code=401,
+                content={"error": "未登录或会话已过期"},
+            )
 
     app.add_middleware(AuthMiddleware)
 

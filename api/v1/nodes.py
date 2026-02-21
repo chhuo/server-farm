@@ -133,8 +133,12 @@ async def add_node(request: Request):
     target_url = f"{scheme}://{host}:{port}" if port_specified else f"{scheme}://{host}"
 
     try:
+        # 携带本节点的 node_key 用于远端认证
+        node_key = request.app.state.node_identity.node_key
+        params = {"node_key": node_key} if node_key else {}
+
         async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.get(f"{target_url}/api/v1/nodes/self")
+            resp = await client.get(f"{target_url}/api/v1/nodes/self", params=params)
             resp.raise_for_status()
             remote_info = resp.json()
 
