@@ -97,6 +97,11 @@ def create_app() -> FastAPI:
     app.state.task_service = task_service
     app.state.auth_service = auth_service
 
+    # 绑定 ChatHub 到 app（用于跨节点实时推送）
+    from api.v1.chat import chat_hub
+    chat_hub.bind_app(app)
+    app.state.chat_hub = chat_hub
+
     # ── 认证中间件 ──
     from starlette.middleware.base import BaseHTTPMiddleware
     from starlette.responses import JSONResponse

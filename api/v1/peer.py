@@ -273,6 +273,56 @@ async def trigger_sync(request: Request):
     return result
 
 
+@router.post("/chat-push")
+async def chat_push(request: Request):
+    """
+    接收远端节点推送的聊天消息（实时推送端点）。
+    
+    收到消息后：
+    1. 验证签名
+    2. 去重保存到本地
+    3. 广播给本地 WebSocket 连接
+    """
+    from api.v1.chat import chat_hub, CHAT_FILE
+
+    body = await request.body()
+    import json
+    data = json.loads(body)
+
+    # 验证签名
+    valid, error = _verify_node_signature(request, data, body)
+    if not valid:
+        _logger.warning(f"聊天推送签名验证失败: {error}")
+        return JSONResponse(status_code=403, content={"error": f"签名验证失败: {error}"})
+
+    msg = data.get("message")
+    if not msg or not msg.get("id"):
+        return {"ok": False, "error": "无效消息"}
+
+    storage = request.app.state.storage
+
+    # 去重保存
+    def updater(messages):
+        if not isinstance(messages, list):
+            messages = []
+        # 检查是否已存在
+        existing_ids = {m.get("id") for m in messages}
+        if msg["id"] not in existing_ids:
+            messages.append(msg)
+            # 限制最大消息数
+            if len(messages) > 500:
+                messages = messages[-500:]
+        return messages
+
+    storage.update(CHAT_FILE, updater, default=[])
+
+    # 广播给本地 WebSocket 连接
+    await chat_hub.broadcast(msg)
+
+    _logger.debug(f"收到聊天推送: {data.get('node_id', '?')} msg_id={msg.get('id', '?')[:8]}")
+    return {"ok": True}
+
+
 @router.post("/sync")
 async def peer_sync(request: Request):
     """

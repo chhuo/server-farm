@@ -509,6 +509,11 @@ class PeerService:
             self._storage.write(CHAT_FILE, merged_chat)
             self._storage.write(SNIPPETS_FILE, merged_snippets)
 
+            # 通知本地 WebSocket 新消息
+            new_chat = self._find_new_messages(local_chat, merged_chat)
+            if new_chat:
+                await self._notify_chat_hub(new_chat)
+
             if remote_version > self._version:
                 self._version = remote_version
 
@@ -625,6 +630,11 @@ class PeerService:
             self._storage.write(CHAT_FILE, merged_chat)
             self._storage.write(SNIPPETS_FILE, merged_snippets)
 
+            # 通知本地 WebSocket 新消息
+            new_chat = self._find_new_messages(local_chat, merged_chat)
+            if new_chat:
+                await self._notify_chat_hub(new_chat)
+
             remote_version = data.get("current_version", 0)
             if remote_version > self._version:
                 self._version = remote_version
@@ -730,6 +740,10 @@ class PeerService:
                 local_chat = self._storage.read(CHAT_FILE, [])
                 merged_chat = self._merge_chat(local_chat, data["chat"])
                 self._storage.write(CHAT_FILE, merged_chat)
+                # 通知本地 WebSocket 新消息
+                new_chat = self._find_new_messages(local_chat, merged_chat)
+                if new_chat:
+                    await self._notify_chat_hub(new_chat)
             if data.get("snippets"):
                 local_snippets = self._storage.read(SNIPPETS_FILE, [])
                 merged_snippets = self._merge_snippets(local_snippets, data["snippets"])
@@ -996,6 +1010,11 @@ class PeerService:
         self._storage.write(CHAT_FILE, merged_chat)
         self._storage.write(SNIPPETS_FILE, merged_snippets)
 
+        # 检测新增的聊天消息，通知本地 WebSocket
+        new_chat = self._find_new_messages(local_chat, merged_chat)
+        if new_chat:
+            asyncio.create_task(self._notify_chat_hub(new_chat))
+
         resp_nodes = self._filter_nodes_since(merged_nodes, since)
         resp_states = self._filter_states_since(merged_states, since)
         resp_chat = self._filter_chat_since(merged_chat, since)
@@ -1009,6 +1028,21 @@ class PeerService:
             "chat": resp_chat,
             "snippets": resp_snippets,
         }
+
+    def _find_new_messages(self, old_chat: list, merged_chat: list) -> list:
+        """找出合并后新增的聊天消息"""
+        old_ids = {m.get("id") for m in old_chat if m.get("id")}
+        return [m for m in merged_chat if m.get("id") and m["id"] not in old_ids]
+
+    async def _notify_chat_hub(self, new_messages: list):
+        """通知本地 ChatHub 广播新消息"""
+        try:
+            from api.v1.chat import chat_hub
+            if new_messages:
+                await chat_hub.broadcast_messages(new_messages)
+                _logger.debug(f"通知 ChatHub 广播 {len(new_messages)} 条新消息")
+        except Exception as e:
+            _logger.debug(f"通知 ChatHub 异常: {e}")
 
     def handle_heartbeat(self, request_data: dict) -> dict:
         """处理来自 Relay 节点的心跳请求"""
