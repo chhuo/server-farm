@@ -8,17 +8,24 @@ WebSocket 终端 API
 - 前端发送纯文本 → 直接写入 PTY stdin（用户按键）
 - 前端发送 JSON（以 { 开头）→ 控制消息，如 {"type":"resize","cols":80,"rows":24}
 - 后端向前端发送纯文本 → PTY 输出
+
+认证模型：
+- 用户直连本节点终端：Cookie 认证（token）
+- 节点代理远程终端：节点签名认证（X-Node-Id / X-Node-Sig / X-Node-Ts / X-Body-Hash）
 """
 
 import asyncio
+import hashlib
 import json
 import os
 import platform
 import threading
+import time
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
 
 from core.logger import get_logger
+from core.node import NodeIdentity
 
 router = APIRouter(prefix="/terminal", tags=["terminal"])
 _logger = get_logger("api.terminal")
@@ -231,6 +238,64 @@ class ShellSession:
         return False
 
 
+def _verify_ws_node_signature(websocket: WebSocket) -> tuple[bool, str]:
+    """
+    验证 WebSocket 连接上的节点签名（用于节点代理场景）。
+
+    当节点 A 代理终端请求到节点 B 时，A 在 WebSocket 额外 headers 中附加签名信息。
+    B 验证签名并检查 A 是否为 trusted 节点。
+
+    Returns:
+        (is_valid, remote_node_id)
+    """
+    app = websocket.app
+    storage = app.state.storage
+
+    # 从 headers 中获取签名信息
+    remote_node_id = websocket.headers.get("x-node-id", "")
+    timestamp = websocket.headers.get("x-node-ts", "")
+    body_hash = websocket.headers.get("x-body-hash", "")
+    signature = websocket.headers.get("x-node-sig", "")
+
+    if not remote_node_id or not all([timestamp, body_hash, signature]):
+        return False, ""
+
+    # 查找发送方的公钥和信任状态
+    nodes = storage.read("nodes.json", {})
+    remote_node = nodes.get(remote_node_id)
+
+    if not remote_node:
+        _logger.warning(f"终端代理：未知节点 {remote_node_id}")
+        return False, remote_node_id
+
+    trust_status = remote_node.get("trust_status", "")
+    if trust_status not in ("trusted", "self"):
+        _logger.warning(f"终端代理：节点未受信任 {remote_node_id} (status={trust_status})")
+        return False, remote_node_id
+
+    public_key_hex = remote_node.get("public_key", "")
+    if not public_key_hex:
+        _logger.warning(f"终端代理：节点无公钥 {remote_node_id}")
+        return False, remote_node_id
+
+    # 验证签名
+    valid = NodeIdentity.verify_signature(
+        node_id=remote_node_id,
+        timestamp=timestamp,
+        body_hash=body_hash,
+        signature_b64=signature,
+        public_key_hex=public_key_hex,
+        max_age=120.0,  # WebSocket 连接允许更长的签名有效期
+    )
+
+    if not valid:
+        _logger.warning(f"终端代理：签名验证失败 {remote_node_id}")
+        return False, remote_node_id
+
+    _logger.info(f"终端代理：节点签名验证通过 {remote_node_id}")
+    return True, remote_node_id
+
+
 @router.websocket("/ws")
 async def terminal_ws(websocket: WebSocket, node_id: str = Query(default=""),
                       cols: int = Query(default=80), rows: int = Query(default=24)):
@@ -238,6 +303,12 @@ async def terminal_ws(websocket: WebSocket, node_id: str = Query(default=""),
     WebSocket 终端端点。
 
     前端通过 WebSocket 连接此端点，建立持久 PTY shell 会话。
+
+    认证支持两种方式：
+    1. Cookie 认证：用户直接访问（前端 → 本节点）
+    2. 节点签名认证：其他受信任节点代理（节点A → 本节点）
+
+    流程：
     - 前端发送纯文本 → 写入 PTY stdin（用户按键输入）
     - 前端发送 JSON → 控制消息（如 resize）
     - 后端推送 PTY stdout 输出 → 前端显示
@@ -249,16 +320,30 @@ async def terminal_ws(websocket: WebSocket, node_id: str = Query(default=""),
     app = websocket.app
     node_identity = app.state.node_identity
 
-    # 检查认证 (从 cookie 或 query param)
-    auth_service = app.state.auth_service
-    token = websocket.cookies.get("token", "")
-    session = auth_service.validate_token(token)
-    if not session:
+    # ── 认证 ──────────────────────────────────
+    authenticated = False
+
+    # 方式 1: 节点签名认证（代理场景优先检查）
+    node_sig_valid, proxy_node_id = _verify_ws_node_signature(websocket)
+    if node_sig_valid:
+        authenticated = True
+        _logger.info(f"终端认证通过（节点签名）: 来自节点 {proxy_node_id}")
+
+    # 方式 2: Cookie 认证（用户直连）
+    if not authenticated:
+        auth_service = app.state.auth_service
+        token = websocket.cookies.get("token", "")
+        session = auth_service.validate_token(token)
+        if session:
+            authenticated = True
+            _logger.debug("终端认证通过（用户 Cookie）")
+
+    if not authenticated:
         await websocket.send_text("\r\n\x1b[31m认证失败：未登录或会话已过期\x1b[0m\r\n")
         await websocket.close(code=4001, reason="Unauthorized")
         return
 
-    # 判断目标节点
+    # ── 判断目标节点 ──────────────────────────
     target_id = node_id or node_identity.node_id
 
     if target_id != node_identity.node_id:
@@ -274,7 +359,7 @@ async def terminal_ws(websocket: WebSocket, node_id: str = Query(default=""),
         target_mode = target_info.get("mode", "")
         if target_mode in ("full", "temp_full"):
             # 代理到远程 Full 节点的 WebSocket
-            await _proxy_to_remote(websocket, target_info, target_id, cols, rows)
+            await _proxy_to_remote(websocket, target_info, target_id, node_identity, cols, rows)
             return
         else:
             await websocket.send_text(
@@ -283,7 +368,7 @@ async def terminal_ws(websocket: WebSocket, node_id: str = Query(default=""),
             await websocket.close(code=4003, reason="Relay not supported")
             return
 
-    # 本机 — 启动 PTY shell 会话
+    # ── 本机 — 启动 PTY shell 会话 ────────────
     shell = ShellSession()
     try:
         shell.start(cols=cols, rows=rows)
@@ -355,22 +440,55 @@ async def terminal_ws(websocket: WebSocket, node_id: str = Query(default=""),
 
 
 async def _proxy_to_remote(websocket: WebSocket, target_info: dict, target_id: str,
+                           node_identity: NodeIdentity,
                            cols: int = 80, rows: int = 24):
     """
     代理 WebSocket 到远程 Full 节点。
+
+    使用节点间签名认证（secp256k1），而非转发用户 cookie。
+    本节点作为代理方，用自己的私钥签名请求，远程节点验证签名后开启终端。
     """
-    import websockets
+    try:
+        import websockets
+    except ImportError:
+        _logger.error("缺少 websockets 依赖，无法代理终端到远程节点")
+        await websocket.send_text(
+            "\r\n\x1b[31m服务端缺少 websockets 依赖，请安装: pip install websockets\x1b[0m\r\n"
+        )
+        try:
+            await websocket.close(code=4500, reason="Missing websockets dependency")
+        except Exception:
+            pass
+        return
 
     host = target_info.get("host", "")
     port = target_info.get("port", 8300)
-    remote_url = f"ws://{host}:{port}/api/v1/terminal/ws?node_id={target_id}&cols={cols}&rows={rows}"
+
+    # 优先使用 public_url
+    public_url = target_info.get("public_url", "")
+    if public_url:
+        # 从 public_url 构建 ws URL
+        ws_base = public_url.replace("https://", "wss://").replace("http://", "ws://").rstrip("/")
+    else:
+        ws_base = f"ws://{host}:{port}"
+
+    remote_url = f"{ws_base}/api/v1/terminal/ws?node_id={target_id}&cols={cols}&rows={rows}"
 
     _logger.info(f"代理终端到远程节点: {remote_url}")
 
     try:
-        # 转发 cookie
-        token = websocket.cookies.get("token", "")
-        extra_headers = {"Cookie": f"token={token}"} if token else {}
+        # 使用节点签名认证
+        # 构造签名：对一个空 body 签名（WebSocket 握手阶段没有 body）
+        empty_body = b"{}"
+        body_hash = hashlib.sha256(empty_body).hexdigest()
+        sig_headers = node_identity.sign_request(empty_body)
+
+        extra_headers = {
+            "X-Node-Id": sig_headers["X-Node-Id"],
+            "X-Node-Ts": sig_headers["X-Node-Ts"],
+            "X-Body-Hash": sig_headers["X-Body-Hash"],
+            "X-Node-Sig": sig_headers["X-Node-Sig"],
+        }
 
         async with websockets.connect(
             remote_url,
