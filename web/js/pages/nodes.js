@@ -236,6 +236,7 @@ const NodesPage = {
                         <th>信任</th>
                         <th>状态</th>
                         <th>模式</th>
+                        <th>公网</th>
                         <th>公钥指纹</th>
                         <th>地址</th>
                         <th>CPU</th>
@@ -317,6 +318,7 @@ const NodesPage = {
                 <td><span class="tag ${trust.class}">${trust.icon} ${trust.text}</span></td>
                 <td><span class="tag ${statusClass}">${statusText}</span></td>
                 <td><span class="tag ${modeClass}">${modeMap[node.mode] || node.mode}</span></td>
+                <td><span class="tag ${node.connectable ? 'green' : 'red'}">${node.connectable ? '✓ 有' : '✗ 无'}</span></td>
                 <td class="mono" style="font-size:11px">${fingerprint}</td>
                 <td class="mono" style="font-size:12px">${addr}</td>
                 <td class="mono">${cpu}</td>
