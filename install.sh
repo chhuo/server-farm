@@ -43,9 +43,17 @@ if [ -z "$PYTHON" ]; then
 fi
 
 # ── 创建虚拟环境 ──
+if [ -d "$VENV_DIR" ] && [ ! -f "$VENV_DIR/bin/activate" ]; then
+    warn "检测到不完整的虚拟环境，正在删除并重建..."
+    rm -rf "$VENV_DIR"
+fi
+
 if [ ! -d "$VENV_DIR" ]; then
     info "创建虚拟环境..."
     "$PYTHON" -m venv "$VENV_DIR"
+    if [ ! -f "$VENV_DIR/bin/activate" ]; then
+        error "虚拟环境创建失败，请确保已安装 python3-venv 包（例如: apt install python3.12-venv）"
+    fi
     success "虚拟环境已创建: $VENV_DIR"
 else
     success "虚拟环境已存在，跳过创建"
