@@ -415,7 +415,8 @@ class PeerService:
 
     def _get_peer_url(self, peer: dict) -> str:
         """获取节点的可访问 URL"""
-        return peer.get("public_url") or f"http://{peer['host']}:{peer['port']}"
+        url = peer.get("public_url") or f"http://{peer['host']}:{peer['port']}"
+        return url.rstrip("/")
 
     # ──────────────────────────────────────────
     # Hub Full 模式：Gossip 同步
