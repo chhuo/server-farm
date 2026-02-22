@@ -367,6 +367,7 @@ class NodeIdentity:
         def updater(nodes):
             if self._node_id in nodes:
                 nodes[self._node_id]["mode"] = self._mode.value
+                nodes[self._node_id]["registered_at"] = time.time()
             return nodes
         self._storage.update("nodes.json", updater, default={})
 
@@ -441,11 +442,12 @@ class NodeIdentity:
         self._connectable = connectable
         self._public_url = public_url
 
-        # 更新本地节点表
+        # 更新本地节点表（同时更新 registered_at 以触发同步传播）
         def updater(nodes):
             if self._node_id in nodes:
                 nodes[self._node_id]["connectable"] = connectable
                 nodes[self._node_id]["public_url"] = public_url
+                nodes[self._node_id]["registered_at"] = time.time()
             return nodes
         self._storage.update("nodes.json", updater, default={})
 
@@ -455,9 +457,11 @@ class NodeIdentity:
     def update_name(self, name: str):
         """动态更新节点显示名称"""
         self._name = name
+        # 更新本地节点表（同时更新 registered_at 以触发同步传播）
         def updater(nodes):
             if self._node_id in nodes:
                 nodes[self._node_id]["name"] = name
+                nodes[self._node_id]["registered_at"] = time.time()
             return nodes
         self._storage.update("nodes.json", updater, default={})
         _logger.info(f"节点名称已更新: {name}")
