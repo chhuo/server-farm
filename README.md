@@ -1,4 +1,4 @@
-# NodePanel
+# ServerFarm
 
 分布式服务器管理面板。支持多节点拓扑、远程命令执行、系统监控、跨设备聊天与审计日志。
 
@@ -91,7 +91,7 @@ python main.py
 
 ```
 ══════════════════════════════════════════════════════
-  NodePanel v0.1.0  已就绪
+  ServerFarm v0.1.0  已就绪
 ────────────────────────────────────────────────────
   访问地址  http://192.168.x.x:8300
   本机回环  http://127.0.0.1:8300
@@ -111,7 +111,7 @@ python main.py
 
 ```yaml
 app:
-  name: NodePanel
+  name: ServerFarm
   version: 0.1.0
   debug: true
 
@@ -307,7 +307,7 @@ server/
 
 ## 增量同步机制
 
-NodePanel 使用 per-peer 增量同步策略，最大限度降低数据传输量：
+ServerFarm 使用 per-peer 增量同步策略，最大限度降低数据传输量：
 
 1. 每个节点为每个 peer 维护一个 `last_sync_time` 时间戳（存储在 `sync_meta.json`）
 2. 发送端只发送 `last_sync_time` 之后变更的数据

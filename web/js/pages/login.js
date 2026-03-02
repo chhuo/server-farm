@@ -14,7 +14,7 @@ const LoginPage = {
                 <div class="login-card">
                     <div class="login-logo">
                         <div class="login-logo-icon">⬡</div>
-                        <h1 class="login-title" id="login-brand-title">NodePanel</h1>
+                        <h1 class="login-title" id="login-brand-title">ServerFarm</h1>
                         <p class="login-subtitle">分布式服务器管理面板</p>
                     </div>
 

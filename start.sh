@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# NodePanel 快速启动脚本 (Linux / macOS)
+# ServerFarm 快速启动脚本 (Linux / macOS)
 # 前提：已运行过 install.sh
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -11,5 +11,5 @@ if [ ! -f "$PYTHON" ]; then
     exit 1
 fi
 
-echo "[NodePanel] 启动中... 访问 http://localhost:8300"
+echo "[ServerFarm] 启动中... 访问 http://localhost:8300"
 exec "$PYTHON" "$SCRIPT_DIR/main.py"

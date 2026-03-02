@@ -9,8 +9,8 @@ if not exist "%PYTHON%" (
     exit /b 1
 )
 
-echo [NodePanel] 启动中... 访问 http://localhost:8300
-echo [NodePanel] 按 Ctrl+C 停止服务
+echo [ServerFarm] 启动中... 访问 http://localhost:8300
+echo [ServerFarm] 按 Ctrl+C 停止服务
 echo.
 "%PYTHON%" "%SCRIPT_DIR%main.py"
 pause

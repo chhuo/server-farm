@@ -39,7 +39,7 @@ _ENV_SEPARATOR = "__"
 
 _BUILTIN_DEFAULTS: dict[str, Any] = {
     "app": {
-        "name": "NodePanel",
+        "name": "ServerFarm",
         "version": "0.1.0",
         "env": "development",
         "debug": True,
@@ -409,7 +409,7 @@ class ConfigManager:
                     current[section] = copy.deepcopy(section_data)
 
             # YAML 文件头注释
-            app_name = self.get("app.name", "NodePanel")
+            app_name = self.get("app.name", "ServerFarm")
             header = (
                 "# ============================================================\n"
                 f"# {app_name} 配置文件\n"

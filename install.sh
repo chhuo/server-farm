@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# NodePanel 一键安装脚本 (Linux / macOS)
+# ServerFarm 一键安装脚本 (Linux / macOS)
 set -e
 
 CYAN='\033[0;36m'
@@ -8,7 +8,7 @@ YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m'
 
-info()    { echo -e "${CYAN}[NodePanel]${NC} $1"; }
+info()    { echo -e "${CYAN}[ServerFarm]${NC} $1"; }
 success() { echo -e "${GREEN}[✓]${NC} $1"; }
 warn()    { echo -e "${YELLOW}[!]${NC} $1"; }
 error()   { echo -e "${RED}[✗]${NC} $1"; exit 1; }
@@ -18,7 +18,7 @@ VENV_DIR="$SCRIPT_DIR/.venv"
 
 echo ""
 echo -e "${CYAN}╔══════════════════════════════════╗${NC}"
-echo -e "${CYAN}║        NodePanel 安装程序        ║${NC}"
+echo -e "${CYAN}║       ServerFarm 安装程序        ║${NC}"
 echo -e "${CYAN}╚══════════════════════════════════╝${NC}"
 echo ""
 
@@ -86,11 +86,11 @@ elif command -v systemctl &>/dev/null && [ "$(id -u)" -ne 0 ]; then
 fi
 
 if [ "$REGISTER_SERVICE" = true ]; then
-    SERVICE_FILE="/etc/systemd/system/nodepanel.service"
+    SERVICE_FILE="/etc/systemd/system/server-farm.service"
     VENV_PYTHON="$VENV_DIR/bin/python"
     cat > "$SERVICE_FILE" <<EOF
 [Unit]
-Description=NodePanel - Distributed Server Management Panel
+Description=ServerFarm - Distributed Server Management Panel
 After=network.target
 
 [Service]
@@ -106,14 +106,14 @@ StandardError=journal
 WantedBy=multi-user.target
 EOF
     systemctl daemon-reload
-    systemctl enable nodepanel
-    systemctl restart nodepanel
+    systemctl enable server-farm
+    systemctl restart server-farm
     success "systemd 服务已注册并启动"
-    info "管理命令: systemctl {start|stop|restart|status} nodepanel"
+    info "管理命令: systemctl {start|stop|restart|status} server-farm"
 else
     # ── 直接启动 ──
     echo ""
-    info "启动 NodePanel..."
+    info "启动 ServerFarm..."
     echo ""
     exec "$VENV_DIR/bin/python" "$SCRIPT_DIR/main.py"
 fi

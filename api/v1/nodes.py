@@ -21,14 +21,24 @@ router = APIRouter(prefix="/nodes", tags=["nodes"])
 _logger = get_logger("api.nodes")
 
 
+# 节点离线判定阈值（秒）：超过此时间未收到心跳则视为离线
+# 默认 120 秒，可通过配置 peer.offline_threshold 调整
+DEFAULT_OFFLINE_THRESHOLD = 120
+
+
 @router.get("")
 async def list_nodes(request: Request):
     """获取所有已知节点列表（含实时状态和信任状态）"""
     peer_service = request.app.state.peer_service
     node_identity = request.app.state.node_identity
+    config = request.app.state.config
 
     nodes = peer_service.get_all_nodes()
     states = peer_service.get_all_states()
+
+    # 离线判定阈值
+    offline_threshold = config.get("peer.offline_threshold", DEFAULT_OFFLINE_THRESHOLD)
+    now = time.time()
 
     # 组装完整的节点信息
     result = []
@@ -40,12 +50,26 @@ async def list_nodes(request: Request):
         if public_key:
             fingerprint = hashlib.sha256(public_key.encode()).hexdigest()[:16]
 
+        is_self = node_id == node_identity.node_id
+
+        # 判断在线状态：基于 last_seen 时间戳
+        # 本机节点始终在线；远程节点需要在阈值时间内有心跳
+        stored_status = state.get("status", "unknown")
+        last_seen = state.get("last_seen", 0)
+
+        if is_self:
+            status = "online"
+        elif last_seen > 0 and (now - last_seen) > offline_threshold:
+            status = "offline"
+        else:
+            status = stored_status
+
         result.append({
             **info,
-            "status": state.get("status", "unknown"),
-            "last_seen": state.get("last_seen", 0),
+            "status": status,
+            "last_seen": last_seen,
             "system_info": state.get("system_info", {}),
-            "is_self": node_id == node_identity.node_id,
+            "is_self": is_self,
             "trust_status": trust_status,
             "public_key_fingerprint": fingerprint,
         })

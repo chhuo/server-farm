@@ -1,5 +1,5 @@
 """
-NodePanel — 分布式控制台面板入口
+ServerFarm — 分布式控制台面板入口
 
 使用 bootstrap 初始化 Config + Logger，然后启动 FastAPI 服务。
 集成节点身份、存储引擎、Peer 同步的完整生命周期。
@@ -68,7 +68,7 @@ def create_app() -> FastAPI:
         # 启动 Peer 同步
         await peer_service.start()
 
-        app_logger.info(f"NodePanel 就绪 [{node_identity.mode.value} 模式]")
+        app_logger.info(f"ServerFarm 就绪 [{node_identity.mode.value} 模式]")
 
         # 打印就绪 banner
         _print_ready_banner(config, node_identity, auth_service)
@@ -199,7 +199,7 @@ def _print_ready_banner(config, node_identity, auth_service):
     RESET = "\033[0m"
 
     mode = node_identity.mode.value
-    name = config.get("app.name", "NodePanel")
+    name = config.get("app.name", "ServerFarm")
     version = config.get("app.version", "")
 
     lines = [

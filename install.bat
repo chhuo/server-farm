@@ -4,7 +4,7 @@ setlocal enabledelayedexpansion
 
 echo.
 echo ╔══════════════════════════════════╗
-echo ║        NodePanel 安装程序        ║
+echo ║       ServerFarm 安装程序        ║
 echo ╚══════════════════════════════════╝
 echo.
 
@@ -12,7 +12,7 @@ set "SCRIPT_DIR=%~dp0"
 set "VENV_DIR=%SCRIPT_DIR%.venv"
 
 :: ── 检查 Python ──
-echo [NodePanel] 检查 Python 版本...
+echo [ServerFarm] 检查 Python 版本...
 set "PYTHON="
 
 for %%c in (python python3) do (
@@ -41,7 +41,7 @@ if "!PYTHON!"=="" (
 
 :: ── 创建虚拟环境 ──
 if not exist "!VENV_DIR!" (
-    echo [NodePanel] 创建虚拟环境...
+    echo [ServerFarm] 创建虚拟环境...
     !PYTHON! -m venv "!VENV_DIR!"
     echo [OK] 虚拟环境已创建
 ) else (
@@ -49,7 +49,7 @@ if not exist "!VENV_DIR!" (
 )
 
 :: ── 安装依赖 ──
-echo [NodePanel] 安装依赖包...
+echo [ServerFarm] 安装依赖包...
 call "!VENV_DIR!\Scripts\activate.bat"
 python -m pip install --upgrade pip -q
 python -m pip install -r "!SCRIPT_DIR!requirements.txt" -q
@@ -62,9 +62,9 @@ if not exist "!SCRIPT_DIR!config.yaml" (
 
 :: ── 启动 ──
 echo.
-echo [NodePanel] 启动 NodePanel...
-echo [NodePanel] 访问地址: http://localhost:8300
-echo [NodePanel] 按 Ctrl+C 停止服务
+echo [ServerFarm] 启动 ServerFarm...
+echo [ServerFarm] 访问地址: http://localhost:8300
+echo [ServerFarm] 按 Ctrl+C 停止服务
 echo.
 python "!SCRIPT_DIR!main.py"
 

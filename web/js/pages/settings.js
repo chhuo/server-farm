@@ -106,7 +106,7 @@ const SettingsPage = {
                     ${this._renderSetting('运行模式', cfg.node?.mode || '--')}
                     ${this._renderToggleSetting('有公网 IP（可被其他节点直连）', cfg.node?.connectable ?? false, 'node.connectable')}
                     ${this._renderEditableTextSetting('公网地址', cfg.node?.public_url || '', 'node.public_url', 'https://your-server.example.com')}
-                    ${this._renderEditableTextSetting('面板名称', cfg.app?.name || 'NodePanel', 'app.name', '自定义面板名称')}
+                    ${this._renderEditableTextSetting('面板名称', cfg.app?.name || 'ServerFarm', 'app.name', '自定义面板名称')}
                     ${this._renderSetting('应用版本', `v${cfg.app?.version}`)}
                     ${this._renderSetting('运行环境', cfg.app?.env || '--')}
                 `;

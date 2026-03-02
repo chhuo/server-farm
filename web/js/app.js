@@ -8,7 +8,7 @@
     'use strict';
 
     // 全局品牌信息（面板名称），供各页面读取
-    window._branding = { name: 'NodePanel', version: '0.1.0' };
+    window._branding = { name: 'ServerFarm', version: '0.1.0' };
 
     // 注册路由
     Router.register('/dashboard', DashboardPage);

@@ -286,6 +286,13 @@ class PeerService:
         self._join_poll_task = asyncio.create_task(self._join_poll_loop())
         _logger.info(f"已启动加入审批轮询: {target_id} → {target_url}")
 
+    def _clear_join_state(self):
+        """清除加入状态（在终态延迟后调用）"""
+        self._join_target_id = ""
+        self._join_target_url = ""
+        self._join_status = ""
+        _logger.debug("加入网络状态已清除")
+
     def get_join_status(self) -> dict:
         """获取当前加入网络的状态"""
         if not self._join_target_id:
@@ -350,11 +357,18 @@ class PeerService:
 
                     # 立即触发一次同步
                     await self.trigger_sync_now()
+
+                    # 延迟清除加入状态，避免前端无限轮询
+                    await asyncio.sleep(30)
+                    self._clear_join_state()
                     break
 
                 elif status == "kicked":
                     _logger.warning("加入申请被拒绝：节点已被踢出")
                     self._join_status = "kicked"
+                    # 延迟清除加入状态
+                    await asyncio.sleep(60)
+                    self._clear_join_state()
                     break
 
                 else:

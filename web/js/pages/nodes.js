@@ -153,25 +153,38 @@ const NodesPage = {
 
         const status = data.status || 'none';
 
-        if (status === 'none' || status === 'trusted') {
-            // 已加入或未申请，隐藏
-            if (status === 'trusted') {
-                panel.style.display = 'block';
-                content.innerHTML = `
-                    <div style="display:flex; align-items:center; gap:8px; color:var(--success)">
-                        <span style="font-size:20px">✅</span>
-                        <span>已成功加入网络</span>
-                    </div>
-                `;
-                // 3 秒后隐藏
-                setTimeout(() => { panel.style.display = 'none'; }, 3000);
-            } else {
-                panel.style.display = 'none';
+        if (status === 'none') {
+            panel.style.display = 'none';
+            return;
+        }
+
+        if (status === 'trusted') {
+            // 已成功加入，停止轮询并显示一次性提示
+            if (this._joinPollTimer) {
+                clearInterval(this._joinPollTimer);
+                this._joinPollTimer = null;
             }
+            panel.style.display = 'block';
+            content.innerHTML = `
+                <div style="display:flex; align-items:center; gap:8px; color:var(--success)">
+                    <span style="font-size:20px">✅</span>
+                    <span>已成功加入网络</span>
+                </div>
+            `;
+            // 3 秒后隐藏
+            setTimeout(() => { panel.style.display = 'none'; }, 3000);
             return;
         }
 
         panel.style.display = 'block';
+
+        if (status === 'kicked' || status === 'failed') {
+            // 终态，停止轮询
+            if (this._joinPollTimer) {
+                clearInterval(this._joinPollTimer);
+                this._joinPollTimer = null;
+            }
+        }
 
         if (status === 'polling') {
             content.innerHTML = `

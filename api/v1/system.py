@@ -16,7 +16,7 @@ async def get_branding(request: Request):
     """获取面板品牌信息（无需认证，供登录页等使用）"""
     config = request.app.state.config
     return {
-        "name": config.get("app.name", "NodePanel"),
+        "name": config.get("app.name", "ServerFarm"),
         "version": config.get("app.version", "0.1.0"),
     }
 
