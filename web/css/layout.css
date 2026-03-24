@@ -33,14 +33,14 @@
 
 .logo-icon {
     font-size: 1.5rem;
-    color: var(--accent-cyan);
-    filter: drop-shadow(0 0 8px rgba(34, 211, 238, 0.4));
+    color: var(--accent-silver);
+    filter: drop-shadow(0 0 6px rgba(176, 176, 176, 0.25));
 }
 
 .logo-text {
     font-size: 1.2rem;
     font-weight: 700;
-    background: var(--gradient-blue);
+    background: var(--gradient-silver);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
@@ -53,6 +53,7 @@
     background: var(--bg-card);
     color: var(--text-muted);
     font-family: var(--font-mono);
+    border: 1px solid var(--border-subtle);
 }
 
 /* ── 导航 ── */
@@ -72,22 +73,24 @@
     transition: all var(--transition-fast);
     margin-bottom: 2px;
     font-size: 0.95rem;
+    border: 1px solid transparent;
 }
 
 .nav-item:hover {
     background: var(--bg-card);
     color: var(--text-primary);
+    border-color: var(--border-subtle);
 }
 
 .nav-item.active {
-    background: rgba(59, 130, 246, 0.12);
-    color: var(--accent-blue);
+    background: rgba(176, 176, 176, 0.1);
+    color: var(--accent-silver-bright);
     font-weight: 500;
+    border-color: rgba(176, 176, 176, 0.16);
 }
 
 .nav-item.active .nav-icon {
-    color: var(--accent-blue);
-    filter: drop-shadow(0 0 6px rgba(59, 130, 246, 0.3));
+    color: var(--accent-silver-bright);
 }
 
 .nav-icon {
@@ -120,13 +123,13 @@
 
 .status-dot.online {
     background: var(--accent-green);
-    box-shadow: 0 0 8px rgba(16, 185, 129, 0.5);
+    box-shadow: 0 0 6px rgba(74, 222, 128, 0.4);
     animation: pulse-green 2s infinite;
 }
 
 .status-dot.offline {
     background: var(--accent-red);
-    box-shadow: 0 0 8px rgba(239, 68, 68, 0.5);
+    box-shadow: 0 0 6px rgba(248, 113, 113, 0.4);
 }
 
 @keyframes pulse-green {
@@ -163,6 +166,7 @@
     position: sticky;
     top: 0;
     z-index: 50;
+    box-shadow: 0 1px 0 var(--border-subtle);
 }
 
 .sidebar-toggle {
@@ -195,10 +199,11 @@
     font-size: 0.75rem;
     padding: 4px 12px;
     border-radius: var(--radius-full);
-    background: rgba(59, 130, 246, 0.15);
-    color: var(--accent-blue);
+    background: rgba(176, 176, 176, 0.1);
+    color: var(--accent-silver-bright);
     font-weight: 500;
     font-family: var(--font-mono);
+    border: 1px solid rgba(176, 176, 176, 0.16);
 }
 
 /* ── 页面容器 ── */

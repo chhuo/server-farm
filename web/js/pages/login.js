@@ -44,6 +44,13 @@ const LoginPage = {
                                    placeholder="请输入密码" autocomplete="current-password">
                         </div>
 
+                        <div class="form-group remember-device-group">
+                            <label class="remember-device-label">
+                                <input type="checkbox" id="login-remember" class="remember-device-checkbox">
+                                <span class="remember-device-text">记住此设备（30 天内免密登录）</span>
+                            </label>
+                        </div>
+
                         <div class="login-error" id="login-error" style="display:none"></div>
 
                         <button type="submit" class="btn-primary login-btn" id="login-btn">
@@ -70,8 +77,12 @@ const LoginPage = {
             });
         }
 
-        // 检查是否首次设置
-        this._checkSetup();
+        // 先尝试使用设备 Token 自动登录，若无 Token 则检查首次设置
+        this._tryDeviceTokenLogin().then(autoLoginStarted => {
+            if (!autoLoginStarted) {
+                this._checkSetup();
+            }
+        });
     },
 
     destroy() { },
@@ -97,14 +108,60 @@ const LoginPage = {
         } catch { }
     },
 
+    async _tryDeviceTokenLogin() {
+        const deviceToken = localStorage.getItem('device_token');
+        if (!deviceToken) {
+            return false;
+        }
+
+        // 隐藏登录表单，显示加载状态
+        const form = document.getElementById('login-form');
+        if (form) form.style.display = 'none';
+
+        const loadingDiv = document.createElement('div');
+        loadingDiv.className = 'login-auto-loading';
+        loadingDiv.innerHTML = '<div class="loading-spinner"></div><p>正在自动登录...</p>';
+        const card = document.querySelector('.login-card');
+        if (card) card.appendChild(loadingDiv);
+
+        try {
+            const result = await API.post('/api/v1/auth/verify-device-token', {
+                device_token: deviceToken,
+            });
+
+            // 移除加载状态
+            loadingDiv.remove();
+
+            if (result.success) {
+                // 自动登录成功
+                window.location.hash = '#/dashboard';
+                window.location.reload();
+                return true;
+            } else {
+                // Token 无效，清除并显示登录表单
+                localStorage.removeItem('device_token');
+                if (form) form.style.display = 'block';
+                return false;
+            }
+        } catch (err) {
+            // 网络错误，清除 Token 并显示登录表单
+            loadingDiv.remove();
+            localStorage.removeItem('device_token');
+            if (form) form.style.display = 'block';
+            return false;
+        }
+    },
+
     async _doLogin() {
         const userEl = document.getElementById('login-user');
         const passEl = document.getElementById('login-pass');
+        const rememberEl = document.getElementById('login-remember');
         const errorEl = document.getElementById('login-error');
         const btnEl = document.getElementById('login-btn');
 
         const username = userEl.value.trim();
         const password = passEl.value;
+        const rememberDevice = rememberEl ? rememberEl.checked : false;
 
         if (!username || !password) {
             this._showError('请输入用户名和密码');
@@ -116,7 +173,9 @@ const LoginPage = {
 
         try {
             const result = await API.post('/api/v1/auth/login', {
-                username, password,
+                username,
+                password,
+                remember_device: rememberDevice,
             });
 
             if (result.error) {
@@ -124,6 +183,11 @@ const LoginPage = {
                 btnEl.disabled = false;
                 btnEl.textContent = '登 录';
             } else {
+                // 保存设备 Token（如果勾选"记住此设备"）
+                if (rememberDevice && result.device_token) {
+                    localStorage.setItem('device_token', result.device_token);
+                }
+
                 // 登录成功，记录是否需要提示修改密码
                 if (this._setupRequired) {
                     sessionStorage.setItem('showChangePassword', '1');

@@ -27,6 +27,11 @@ async def login(request: Request, response: Response):
     token = auth_service.login(username, password)
 
     if token:
+        remember_device = data.get("remember_device", False)
+        device_token = None
+        if remember_device:
+            device_token = auth_service.generate_device_token(username)
+
         response.set_cookie(
             key="token",
             value=token,
@@ -34,9 +39,37 @@ async def login(request: Request, response: Response):
             max_age=86400,
             samesite="lax",
         )
-        return {"success": True, "user": username}
+        result = {"success": True, "user": username}
+        if device_token:
+            result["device_token"] = device_token
+        return result
     else:
         return {"error": "用户名或密码错误"}
+
+
+@router.post("/verify-device-token")
+async def verify_device_token(request: Request, response: Response):
+    """使用设备 Token 自动登录（记住此设备功能）"""
+    auth_service = request.app.state.auth_service
+    data = await request.json()
+    device_token = data.get("device_token", "")
+
+    if not device_token:
+        return {"error": "缺少设备 Token"}
+
+    username = auth_service.verify_device_token(device_token)
+    if not username:
+        return {"error": "设备 Token 无效或已过期"}
+
+    token = auth_service.login_by_device(username)
+    response.set_cookie(
+        key="token",
+        value=token,
+        httponly=True,
+        max_age=86400,
+        samesite="lax",
+    )
+    return {"success": True, "user": username}
 
 
 @router.post("/logout")

@@ -74,8 +74,8 @@ img {
 
 /* ── Selection ── */
 ::selection {
-    background: var(--accent-blue);
-    color: #fff;
+    background: var(--accent-silver-dim);
+    color: var(--bg-primary);
 }
 
 /* ── Typography ── */

@@ -1,46 +1,49 @@
 /* ============================================================
-   CSS 变量 — 全局设计令牌
+   CSS 变量 — 黑灰银暗色主题
    ============================================================ */
 
 :root {
-    /* ── 颜色：暗色主题 ── */
-    --bg-primary:       #0a0e17;
-    --bg-secondary:     #111827;
-    --bg-card:          #1a2235;
-    --bg-card-hover:    #1f2a3f;
-    --bg-input:         #0d1320;
-    --bg-sidebar:       #0c1222;
+    /* ── 颜色：黑灰银暗色主题 ── */
+    /* 背景层级：纯黑 → 深灰 → 中灰 → 卡片灰 */
+    --bg-primary:       #0d0d0d;
+    --bg-secondary:     #141414;
+    --bg-card:          #1c1c1c;
+    --bg-card-hover:    #242424;
+    --bg-input:         #111111;
+    --bg-sidebar:       #0f0f0f;
 
-    --text-primary:     #e8edf5;
-    --text-secondary:   #8b95a8;
-    --text-muted:       #5a6478;
-    --text-inverse:     #0a0e17;
+    /* 文本层级 */
+    --text-primary:     #e8e8e8;
+    --text-secondary:   #9a9a9a;
+    --text-muted:       #5a5a5a;
+    --text-inverse:     #0d0d0d;
 
-    /* 强调色 */
-    --accent-blue:      #3b82f6;
-    --accent-blue-dim:  #2563eb;
-    --accent-cyan:      #22d3ee;
-    --accent-green:     #10b981;
-    --accent-yellow:    #f59e0b;
-    --accent-orange:    #f97316;
-    --accent-red:       #ef4444;
-    --accent-purple:    #a855f7;
+    /* 强调色 — 银灰系 + 必要语义色 */
+    --accent-silver:    #b0b0b0;
+    --accent-silver-bright: #d0d0d0;
+    --accent-silver-dim: #787878;
+    --accent-green:     #4ade80;
+    --accent-yellow:    #fbbf24;
+    --accent-orange:    #fb923c;
+    --accent-red:       #f87171;
+    --accent-cyan:      #67e8f9;
 
-    /* 渐变 */
-    --gradient-blue:    linear-gradient(135deg, #3b82f6, #2dd4bf);
-    --gradient-green:   linear-gradient(135deg, #10b981, #34d399);
-    --gradient-red:     linear-gradient(135deg, #ef4444, #f97316);
-    --gradient-purple:  linear-gradient(135deg, #a855f7, #6366f1);
+    /* 渐变 — 银灰主导 */
+    --gradient-silver:  linear-gradient(135deg, #b0b0b0, #787878);
+    --gradient-green:   linear-gradient(135deg, #4ade80, #22c55e);
+    --gradient-red:     linear-gradient(135deg, #f87171, #fb923c);
+    --gradient-cyan:    linear-gradient(135deg, #67e8f9, #22d3ee);
 
-    /* ── 边框 ── */
-    --border-color:     #1e293b;
-    --border-subtle:    #15202e;
+    /* ── 边框 — 清晰层级 ── */
+    --border-color:     #2a2a2a;
+    --border-subtle:    #1e1e1e;
+    --border-strong:    #3a3a3a;
 
     /* ── 阴影 ── */
-    --shadow-sm:        0 1px 3px rgba(0, 0, 0, 0.3);
-    --shadow-md:        0 4px 16px rgba(0, 0, 0, 0.4);
-    --shadow-lg:        0 8px 32px rgba(0, 0, 0, 0.5);
-    --shadow-glow-blue: 0 0 20px rgba(59, 130, 246, 0.15);
+    --shadow-sm:        0 1px 3px rgba(0, 0, 0, 0.5);
+    --shadow-md:        0 4px 16px rgba(0, 0, 0, 0.6);
+    --shadow-lg:        0 8px 32px rgba(0, 0, 0, 0.7);
+    --shadow-silver:    0 0 20px rgba(176, 176, 176, 0.08);
 
     /* ── 圆角 ── */
     --radius-sm:        6px;

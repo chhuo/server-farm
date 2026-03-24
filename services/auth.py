@@ -20,6 +20,9 @@ _logger = get_logger("services.auth")
 # Token 有效期（秒） — 24 小时
 TOKEN_EXPIRY = 86400
 
+# Device Token 有效期（秒） — 30 天
+DEVICE_TOKEN_EXPIRY = 30 * 24 * 3600
+
 
 class AuthService:
     """认证与会话管理服务"""
@@ -77,6 +80,17 @@ class AuthService:
         except Exception:
             return False
 
+    def _create_session(self, username: str) -> str:
+        """创建会话 Token"""
+        token = secrets.token_urlsafe(32)
+        now = time.time()
+        self._sessions[token] = {
+            "user": username,
+            "created_at": now,
+            "expires_at": now + TOKEN_EXPIRY,
+        }
+        return token
+
     def login(self, username: str, password: str) -> Optional[str]:
         """
         登录验证。
@@ -96,17 +110,63 @@ class AuthService:
             _logger.warning(f"登录失败: 密码错误 ({username})")
             return None
 
-        # 生成 Token
-        token = secrets.token_urlsafe(32)
-        now = time.time()
-        self._sessions[token] = {
-            "user": username,
-            "created_at": now,
-            "expires_at": now + TOKEN_EXPIRY,
-        }
-
+        token = self._create_session(username)
         _logger.info(f"登录成功: {username}")
         return token
+
+    def login_by_device(self, username: str) -> str:
+        """通过已验证设备直接创建会话"""
+        token = self._create_session(username)
+        _logger.info(f"设备免密登录成功: {username}")
+        return token
+
+    def generate_device_token(self, username: str) -> str:
+        """生成设备 Token（用于记住当前设备）"""
+        auth_data = self._storage.read("auth.json", {})
+        device_tokens = auth_data.get("device_tokens", {})
+
+        token = secrets.token_urlsafe(48)
+        now = time.time()
+        device_tokens[token] = {
+            "user": username,
+            "created_at": now,
+            "expires_at": now + DEVICE_TOKEN_EXPIRY,
+        }
+
+        auth_data["device_tokens"] = device_tokens
+        self._storage.write("auth.json", auth_data)
+        _logger.info(f"已生成设备 Token: {username}")
+        return token
+
+    def verify_device_token(self, device_token: str) -> Optional[str]:
+        """验证设备 Token，成功返回用户名"""
+        auth_data = self._storage.read("auth.json", {})
+        device_tokens = auth_data.get("device_tokens", {})
+        token_data = device_tokens.get(device_token)
+
+        if not token_data:
+            return None
+
+        if time.time() > token_data.get("expires_at", 0):
+            del device_tokens[device_token]
+            auth_data["device_tokens"] = device_tokens
+            self._storage.write("auth.json", auth_data)
+            return None
+
+        return token_data.get("user")
+
+    def revoke_device_token(self, device_token: str) -> bool:
+        """撤销设备 Token"""
+        auth_data = self._storage.read("auth.json", {})
+        device_tokens = auth_data.get("device_tokens", {})
+
+        if device_token not in device_tokens:
+            return False
+
+        del device_tokens[device_token]
+        auth_data["device_tokens"] = device_tokens
+        self._storage.write("auth.json", auth_data)
+        return True
 
     def logout(self, token: str) -> bool:
         """注销 Token"""
@@ -168,3 +228,15 @@ class AuthService:
         expired = [t for t, s in self._sessions.items() if now > s["expires_at"]]
         for token in expired:
             del self._sessions[token]
+
+        auth_data = self._storage.read("auth.json", {})
+        device_tokens = auth_data.get("device_tokens", {})
+        expired_device_tokens = [
+            t for t, s in device_tokens.items() if now > s.get("expires_at", 0)
+        ]
+        for token in expired_device_tokens:
+            del device_tokens[token]
+
+        if expired_device_tokens:
+            auth_data["device_tokens"] = device_tokens
+            self._storage.write("auth.json", auth_data)

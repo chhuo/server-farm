@@ -18,11 +18,13 @@
     transition: all var(--transition-base);
     position: relative;
     overflow: hidden;
+    box-shadow: var(--shadow-sm);
 }
 
 .stat-card:hover {
     background: var(--bg-card-hover);
-    box-shadow: var(--shadow-glow-blue);
+    border-color: var(--border-strong);
+    box-shadow: var(--shadow-md);
     transform: translateY(-2px);
 }
 
@@ -32,12 +34,13 @@
     top: 0;
     left: 0;
     right: 0;
-    height: 3px;
+    height: 2px;
     border-radius: var(--radius-md) var(--radius-md) 0 0;
+    opacity: 0.9;
 }
 
 .stat-card.blue::before {
-    background: var(--gradient-blue);
+    background: var(--gradient-silver);
 }
 
 .stat-card.green::before {
@@ -49,7 +52,7 @@
 }
 
 .stat-card.purple::before {
-    background: var(--gradient-purple);
+    background: linear-gradient(135deg, #8f8f8f, #5f5f5f);
 }
 
 .stat-card-header {
@@ -67,7 +70,8 @@
 
 .stat-card-icon {
     font-size: 1.3rem;
-    opacity: 0.6;
+    opacity: 0.65;
+    color: var(--accent-silver);
 }
 
 .stat-card-value {
@@ -89,6 +93,7 @@
     width: 100%;
     height: 6px;
     background: var(--bg-primary);
+    border: 1px solid var(--border-subtle);
     border-radius: var(--radius-full);
     overflow: hidden;
     margin-top: 12px;
@@ -102,7 +107,7 @@
 }
 
 .progress-bar-fill.blue {
-    background: var(--gradient-blue);
+    background: var(--gradient-silver);
 }
 
 .progress-bar-fill.green {
@@ -124,6 +129,7 @@
     border-radius: var(--radius-md);
     margin-bottom: 20px;
     overflow: hidden;
+    box-shadow: var(--shadow-sm);
 }
 
 .panel-header {
@@ -132,6 +138,7 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
+    background: color-mix(in srgb, var(--bg-card) 75%, var(--bg-secondary));
 }
 
 .panel-title {
@@ -174,7 +181,7 @@
 }
 
 .data-table tr:hover td {
-    background: var(--bg-card-hover);
+    background: color-mix(in srgb, var(--bg-card-hover) 85%, var(--bg-secondary));
 }
 
 /* ── 标签 ── */
@@ -185,26 +192,31 @@
     border-radius: var(--radius-full);
     font-size: 0.75rem;
     font-weight: 500;
+    border: 1px solid transparent;
 }
 
 .tag.green {
-    background: rgba(16, 185, 129, 0.15);
+    background: rgba(74, 222, 128, 0.12);
     color: var(--accent-green);
+    border-color: rgba(74, 222, 128, 0.18);
 }
 
 .tag.red {
-    background: rgba(239, 68, 68, 0.15);
+    background: rgba(248, 113, 113, 0.12);
     color: var(--accent-red);
+    border-color: rgba(248, 113, 113, 0.18);
 }
 
 .tag.yellow {
-    background: rgba(245, 158, 11, 0.15);
+    background: rgba(251, 191, 36, 0.12);
     color: var(--accent-yellow);
+    border-color: rgba(251, 191, 36, 0.18);
 }
 
 .tag.blue {
-    background: rgba(59, 130, 246, 0.15);
-    color: var(--accent-blue);
+    background: rgba(176, 176, 176, 0.12);
+    color: var(--accent-silver-bright);
+    border-color: rgba(176, 176, 176, 0.2);
 }
 
 /* ── 信息网格 ── */
@@ -250,7 +262,7 @@
     width: 24px;
     height: 24px;
     border: 3px solid var(--border-color);
-    border-top-color: var(--accent-blue);
+    border-top-color: var(--accent-silver-bright);
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
     margin-right: 12px;
@@ -313,7 +325,7 @@
     left: 0;
     right: 0;
     bottom: 0;
-    background: rgba(0, 0, 0, 0.6);
+    background: rgba(0, 0, 0, 0.72);
     backdrop-filter: blur(4px);
     display: flex;
     align-items: center;
@@ -324,7 +336,7 @@
 
 .dialog {
     background: var(--bg-card);
-    border: 1px solid var(--border-color);
+    border: 1px solid var(--border-strong);
     border-radius: var(--radius-lg);
     width: 420px;
     max-width: 90vw;
@@ -350,6 +362,7 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
+    background: color-mix(in srgb, var(--bg-card) 75%, var(--bg-secondary));
 }
 
 .dialog-title {
@@ -396,13 +409,18 @@
     color: var(--text-primary);
     font-family: var(--font-mono);
     font-size: 0.9rem;
-    transition: border-color var(--transition-fast);
+    transition: border-color var(--transition-fast), box-shadow var(--transition-fast), background var(--transition-fast);
     outline: none;
 }
 
+.form-input:hover {
+    border-color: var(--border-strong);
+}
+
 .form-input:focus {
-    border-color: var(--accent-blue);
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    border-color: var(--accent-silver);
+    box-shadow: 0 0 0 3px rgba(176, 176, 176, 0.12);
+    background: color-mix(in srgb, var(--bg-input) 90%, #1a1a1a);
 }
 
 .form-input::placeholder {
@@ -411,9 +429,10 @@
 
 .form-tip {
     font-size: 0.8rem;
-    color: var(--text-muted);
+    color: var(--text-secondary);
     padding: 10px 14px;
-    background: rgba(59, 130, 246, 0.06);
+    background: rgba(176, 176, 176, 0.08);
+    border: 1px solid rgba(176, 176, 176, 0.14);
     border-radius: var(--radius-sm);
     margin-bottom: 16px;
     line-height: 1.5;
@@ -424,6 +443,7 @@
     padding: 1px 6px;
     border-radius: 3px;
     font-size: 0.8rem;
+    border: 1px solid var(--border-subtle);
 }
 
 .form-actions {
@@ -465,13 +485,14 @@
 }
 
 .btn-primary {
-    background: var(--accent-blue);
-    color: #fff;
+    background: linear-gradient(180deg, #b8b8b8, #8a8a8a);
+    color: #101010;
+    border-color: #bdbdbd;
 }
 
 .btn-primary:hover:not(:disabled) {
-    background: var(--accent-blue-dim);
-    box-shadow: var(--shadow-glow-blue);
+    background: linear-gradient(180deg, #d0d0d0, #9a9a9a);
+    box-shadow: var(--shadow-silver);
 }
 
 .btn-secondary {
@@ -483,6 +504,7 @@
 .btn-secondary:hover:not(:disabled) {
     background: var(--bg-card-hover);
     color: var(--text-primary);
+    border-color: var(--border-strong);
 }
 
 .add-node-btn {
@@ -490,16 +512,17 @@
     border-radius: var(--radius-sm);
     font-size: 0.85rem;
     font-weight: 500;
-    background: rgba(59, 130, 246, 0.12);
-    color: var(--accent-blue);
+    background: rgba(176, 176, 176, 0.08);
+    color: var(--accent-silver-bright);
     cursor: pointer;
     transition: all var(--transition-fast);
-    border: 1px solid rgba(59, 130, 246, 0.2);
+    border: 1px solid rgba(176, 176, 176, 0.18);
 }
 
 .add-node-btn:hover {
-    background: rgba(59, 130, 246, 0.2);
-    box-shadow: var(--shadow-glow-blue);
+    background: rgba(176, 176, 176, 0.14);
+    border-color: rgba(176, 176, 176, 0.3);
+    box-shadow: var(--shadow-silver);
 }
 
 /* ── 远程终端 ── */
@@ -529,13 +552,14 @@
 
 /* xterm.js 容器 */
 .terminal-xterm-container {
-    background: #0a0e14;
-    border: 1px solid var(--border-color);
+    background: #0b0b0b;
+    border: 1px solid var(--border-strong);
     border-radius: var(--radius-md);
     padding: 8px;
     height: calc(100vh - var(--topbar-height) - 140px);
     min-height: 400px;
     overflow: hidden;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.02);
 }
 
 .terminal-xterm-container .xterm {
@@ -577,8 +601,8 @@
 }
 
 .tab-btn.active {
-    color: var(--accent-blue);
-    border-bottom-color: var(--accent-blue);
+    color: var(--accent-silver-bright);
+    border-bottom-color: var(--accent-silver);
 }
 
 /* ── 工具类 ── */
@@ -589,8 +613,8 @@
 
 /* ── 初始凭据提示框 ── */
 .initial-creds-box {
-    background: color-mix(in srgb, var(--accent-yellow) 12%, var(--bg-secondary));
-    border: 1px solid color-mix(in srgb, var(--accent-yellow) 40%, transparent);
+    background: color-mix(in srgb, var(--accent-yellow) 8%, var(--bg-secondary));
+    border: 1px solid color-mix(in srgb, var(--accent-yellow) 28%, transparent);
     border-radius: var(--radius-md);
     padding: 14px 16px;
     margin-bottom: 20px;
@@ -626,6 +650,7 @@
     border-radius: var(--radius-sm);
     letter-spacing: 0.03em;
     user-select: all;
+    border: 1px solid var(--border-subtle);
 }
 
 .initial-creds-tip {
@@ -640,7 +665,7 @@
     justify-content: center;
     align-items: center;
     min-height: 100vh;
-    background: var(--bg-primary);
+    background: radial-gradient(circle at top, #1a1a1a 0%, var(--bg-primary) 45%);
 }
 
 .login-card {
@@ -649,7 +674,7 @@
     padding: 48px 36px;
     background: var(--bg-card);
     border-radius: var(--radius-lg);
-    border: 1px solid var(--border-color);
+    border: 1px solid var(--border-strong);
     box-shadow: var(--shadow-lg);
 }
 
@@ -662,7 +687,7 @@
     font-size: 3rem;
     line-height: 1;
     margin-bottom: 12px;
-    background: var(--gradient-blue);
+    background: var(--gradient-silver);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
@@ -685,13 +710,13 @@
 }
 
 .login-error {
-    background: rgba(239, 68, 68, 0.1);
+    background: rgba(248, 113, 113, 0.08);
     color: var(--accent-red);
     padding: 10px 14px;
     border-radius: var(--radius-sm);
     font-size: 0.85rem;
     margin-bottom: 16px;
-    border: 1px solid rgba(239, 68, 68, 0.2);
+    border: 1px solid rgba(248, 113, 113, 0.16);
 }
 
 .login-btn {
@@ -821,6 +846,7 @@
 
 .btn-sm:hover {
     background: var(--bg-card-hover);
+    border-color: var(--border-strong);
 }
 
 .btn-small {
@@ -831,21 +857,21 @@
 
 .btn-success {
     color: var(--accent-green);
-    border: 1px solid var(--accent-green);
+    border: 1px solid rgba(74, 222, 128, 0.35);
     background: transparent;
 }
 
 .btn-success:hover {
-    background: rgba(34, 197, 94, 0.1);
+    background: rgba(74, 222, 128, 0.08);
 }
 
 .btn-danger {
     color: var(--accent-red);
-    border-color: rgba(239, 68, 68, 0.3);
+    border-color: rgba(248, 113, 113, 0.24);
 }
 
 .btn-danger:hover {
-    background: rgba(239, 68, 68, 0.1);
+    background: rgba(248, 113, 113, 0.08);
 }
 
 /* ── 聊天页面 — Telegram 风格 ── */
@@ -858,6 +884,7 @@
     border-radius: var(--radius-md);
     overflow: hidden;
     position: relative;
+    box-shadow: var(--shadow-sm);
 }
 
 .chat-header-bar {
@@ -906,7 +933,7 @@
 
 .status-dot.online {
     background: var(--accent-green);
-    box-shadow: 0 0 6px rgba(16, 185, 129, 0.5);
+    box-shadow: 0 0 6px rgba(74, 222, 128, 0.4);
 }
 
 .status-dot.offline {
@@ -1010,8 +1037,8 @@
 
 .chat-bubble.mine {
     align-self: flex-end;
-    background: rgba(59, 130, 246, 0.15);
-    border: 1px solid rgba(59, 130, 246, 0.2);
+    background: rgba(176, 176, 176, 0.12);
+    border: 1px solid rgba(176, 176, 176, 0.2);
     border-radius: 12px 12px 4px 12px;
 }
 
@@ -1030,7 +1057,7 @@
 .chat-node-name {
     font-size: 0.73rem;
     font-weight: 600;
-    color: var(--accent-cyan);
+    color: var(--accent-silver-bright);
 }
 
 /* 消息体 — 内联元数据（类似 Telegram） */
@@ -1074,7 +1101,7 @@
 }
 
 .chat-msg-status.sent {
-    color: var(--accent-blue);
+    color: var(--accent-silver);
 }
 
 .chat-msg-status.delivered {
@@ -1095,16 +1122,17 @@
     align-items: center;
     gap: 4px;
     padding: 6px 16px;
-    background: var(--accent-blue);
-    color: #fff;
+    background: linear-gradient(180deg, #b8b8b8, #8a8a8a);
+    color: #111;
     font-size: 0.78rem;
-    font-weight: 500;
+    font-weight: 600;
     border-radius: var(--radius-full);
     cursor: pointer;
-    box-shadow: 0 2px 12px rgba(59, 130, 246, 0.4);
+    box-shadow: 0 2px 12px rgba(176, 176, 176, 0.16);
     z-index: 10;
     transition: all var(--transition-fast);
     animation: badge-in 0.2s ease-out;
+    border: 1px solid rgba(208, 208, 208, 0.2);
 }
 
 @keyframes badge-in {
@@ -1119,8 +1147,8 @@
 }
 
 .chat-unread-badge:hover {
-    background: var(--accent-blue-dim);
-    box-shadow: 0 4px 16px rgba(59, 130, 246, 0.5);
+    box-shadow: 0 4px 16px rgba(176, 176, 176, 0.22);
+    filter: brightness(1.05);
 }
 
 /* 输入栏 */
@@ -1143,12 +1171,12 @@
     color: var(--text-primary);
     font-size: 0.9rem;
     outline: none;
-    transition: border-color var(--transition-fast);
+    transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
 }
 
 .chat-input:focus {
-    border-color: var(--accent-blue);
-    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+    border-color: var(--accent-silver);
+    box-shadow: 0 0 0 2px rgba(176, 176, 176, 0.1);
 }
 
 .chat-send-btn {
@@ -1160,17 +1188,17 @@
     align-items: center;
     justify-content: center;
     border-radius: 50%;
-    background: var(--accent-blue);
-    color: #fff;
-    border: none;
+    background: linear-gradient(180deg, #b8b8b8, #8a8a8a);
+    color: #101010;
+    border: 1px solid rgba(208, 208, 208, 0.2);
     cursor: pointer;
     transition: all var(--transition-fast);
 }
 
 .chat-send-btn:hover {
-    background: var(--accent-blue-dim);
-    box-shadow: var(--shadow-glow-blue);
+    box-shadow: var(--shadow-silver);
     transform: scale(1.05);
+    filter: brightness(1.05);
 }
 
 .chat-send-btn:active {
@@ -1224,10 +1252,12 @@
     border-radius: var(--radius-md);
     overflow: hidden;
     transition: all var(--transition-fast);
+    box-shadow: var(--shadow-sm);
 }
 
 .snippet-card:hover {
-    border-color: rgba(59, 130, 246, 0.3);
+    border-color: var(--border-strong);
+    background: color-mix(in srgb, var(--bg-card) 85%, var(--bg-card-hover));
 }
 
 .snippet-card-header {
@@ -1312,17 +1342,17 @@
 }
 
 .snippet-field-value.copyable:hover {
-    background: rgba(59, 130, 246, 0.1);
-    color: var(--accent-blue);
+    background: rgba(176, 176, 176, 0.08);
+    color: var(--accent-silver-bright);
 }
 
 .snippet-field-value.copyable:active {
-    background: rgba(59, 130, 246, 0.18);
+    background: rgba(176, 176, 176, 0.15);
 }
 
 .snippet-field-value.copyable.copied {
     color: var(--accent-green);
-    background: rgba(16, 185, 129, 0.1);
+    background: rgba(74, 222, 128, 0.08);
 }
 
 .snippet-field-value.masked {
@@ -1331,7 +1361,7 @@
 }
 
 .snippet-field-value.masked:hover {
-    background: rgba(59, 130, 246, 0.06);
+    background: rgba(176, 176, 176, 0.05);
     color: var(--text-muted);
 }
 
@@ -1342,9 +1372,9 @@
     left: 50%;
     transform: translateX(-50%) translateY(20px);
     background: var(--accent-green);
-    color: #fff;
+    color: #0b0b0b;
     font-size: 0.88rem;
-    font-weight: 500;
+    font-weight: 600;
     padding: 10px 24px;
     border-radius: var(--radius-md);
     white-space: nowrap;
@@ -1352,7 +1382,7 @@
     opacity: 0;
     transition: opacity 0.25s ease, transform 0.25s ease;
     z-index: 9999;
-    box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
 }
 
 .snippet-global-toast.show {
@@ -1404,16 +1434,19 @@
     border-radius: var(--radius-full);
     font-size: 0.72rem;
     font-weight: 500;
+    border: 1px solid transparent;
 }
 
 .connectivity-tag.public {
-    background: rgba(16, 185, 129, 0.12);
+    background: rgba(74, 222, 128, 0.1);
     color: var(--accent-green);
+    border-color: rgba(74, 222, 128, 0.16);
 }
 
 .connectivity-tag.private {
-    background: rgba(245, 158, 11, 0.12);
+    background: rgba(251, 191, 36, 0.1);
     color: var(--accent-yellow);
+    border-color: rgba(251, 191, 36, 0.16);
 }
 
 /* ── Toggle 开关 ── */
@@ -1455,13 +1488,13 @@
 }
 
 .toggle-switch input:checked + .toggle-slider {
-    background: rgba(59, 130, 246, 0.2);
-    border-color: var(--accent-blue);
+    background: rgba(176, 176, 176, 0.16);
+    border-color: var(--accent-silver);
 }
 
 .toggle-switch input:checked + .toggle-slider::before {
     transform: translate(18px, -50%);
-    background: var(--accent-blue);
+    background: var(--accent-silver-bright);
 }
 
 /* ── 注销按钮 ── */
@@ -1483,7 +1516,7 @@
 
 .logout-btn:hover {
     color: var(--accent-red);
-    background: rgba(239, 68, 68, 0.08);
+    background: rgba(248, 113, 113, 0.06);
 }
 
 /* ── 仪表盘节点选择器 ── */
@@ -1497,6 +1530,7 @@
     border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
     flex-wrap: wrap;
+    box-shadow: var(--shadow-sm);
 }
 
 .node-selector-label {
@@ -1516,22 +1550,22 @@
     font-family: var(--font-mono);
     outline: none;
     cursor: pointer;
-    transition: border-color var(--transition-fast);
+    transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
     appearance: none;
     -webkit-appearance: none;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%236b7280' d='M3 5l3 3 3-3'/%3E%3C/svg%3E");
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%239a9a9a' d='M3 5l3 3 3-3'/%3E%3C/svg%3E");
     background-repeat: no-repeat;
     background-position: right 10px center;
     min-width: 180px;
 }
 
 .node-selector-select:focus {
-    border-color: var(--accent-blue);
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    border-color: var(--accent-silver);
+    box-shadow: 0 0 0 3px rgba(176, 176, 176, 0.12);
 }
 
 .node-selector-select:hover {
-    border-color: var(--accent-blue);
+    border-color: var(--border-strong);
 }
 
 .node-selector-hint {
@@ -1541,10 +1575,10 @@
 }
 
 .node-selector-hint.remote {
-    color: var(--accent-cyan);
-    background: rgba(6, 182, 212, 0.08);
+    color: var(--accent-silver-bright);
+    background: rgba(176, 176, 176, 0.08);
     padding: 4px 10px;
     border-radius: var(--radius-full);
-    border: 1px solid rgba(6, 182, 212, 0.2);
+    border: 1px solid rgba(176, 176, 176, 0.16);
     font-size: 0.78rem;
 }

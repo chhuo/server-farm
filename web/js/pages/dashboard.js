@@ -201,15 +201,15 @@ const DashboardPage = {
             cpuEl.textContent = `${data.cpu.percent}%`;
             cpuInfoEl.textContent = `${data.cpu.count_logical} 核 / ${data.cpu.frequency_mhz} MHz`;
 
-            // CPU 核心条
-            if (cpuCoresEl && data.cpu.percent_per_core) {
-                cpuCoresEl.innerHTML = data.cpu.percent_per_core.map(p => {
-                    const color = p > 80 ? 'var(--accent-red)' :
-                        p > 50 ? 'var(--accent-yellow)' :
-                            'var(--accent-cyan)';
-                    return `<div class="core-bar" style="height:${Math.max(p, 5)}%;background:${color}"></div>`;
-                }).join('');
-            }
+                // CPU 核心条
+                if (cpuCoresEl && data.cpu.percent_per_core) {
+                    cpuCoresEl.innerHTML = data.cpu.percent_per_core.map(p => {
+                        const color = p > 80 ? 'var(--accent-red)' :
+                            p > 50 ? 'var(--accent-yellow)' :
+                                'var(--accent-silver-bright)';
+                        return `<div class="core-bar" style="height:${Math.max(p, 5)}%;background:${color}"></div>`;
+                    }).join('');
+                }
         } else if (cpuEl) {
             cpuEl.textContent = '--';
             if (cpuInfoEl) cpuInfoEl.textContent = '暂无数据';
