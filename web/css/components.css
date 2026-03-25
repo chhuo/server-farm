@@ -558,20 +558,27 @@
     padding: 8px;
     height: calc(100vh - var(--topbar-height) - 140px);
     min-height: 400px;
+    width: 100%;
+    min-width: 0;
     overflow: hidden;
+    box-sizing: border-box;
     box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.02);
 }
 
 .terminal-xterm-container .xterm {
     height: 100%;
+    width: 100%;
+    overflow: hidden;
 }
 
 .terminal-xterm-container .xterm-viewport {
     border-radius: var(--radius-sm);
+    overflow-x: hidden !important;
 }
 
 .terminal-xterm-container .xterm-screen {
     height: 100%;
+    overflow: hidden;
 }
 
 /* ── 标签栏 ── */

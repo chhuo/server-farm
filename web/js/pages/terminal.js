@@ -121,11 +121,13 @@ const TerminalPage = {
             setTimeout(() => this._fitAddon.fit(), 50);
         }
 
-        // 监听容器尺寸变化
+        // 监听容器尺寸变化（防抖，避免 ResizeObserver 反馈循环导致页面无限向右扩展）
+        let _fitTimer = null;
         this._resizeObserver = new ResizeObserver(() => {
-            if (this._fitAddon) {
-                this._fitAddon.fit();
-            }
+            if (_fitTimer) clearTimeout(_fitTimer);
+            _fitTimer = setTimeout(() => {
+                if (this._fitAddon) this._fitAddon.fit();
+            }, 50);
         });
         this._resizeObserver.observe(container);
 

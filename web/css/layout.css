@@ -149,6 +149,8 @@
     margin-left: var(--sidebar-width);
     flex: 1;
     min-height: 100vh;
+    min-width: 0;
+    overflow-x: hidden;
     display: flex;
     flex-direction: column;
     transition: margin-left var(--transition-base);
